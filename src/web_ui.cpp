@@ -11,6 +11,10 @@ enum { PROTO_UDP = 0, PROTO_TCP = 1 };
 // Pääohjelmasta tarvittavat symbolit
 extern Preferences prefs;
 
+extern int pulseDuty; // määritelty wind_project.ino:ssa
+// Oletusarvo testiin
+// pulseDuty = 20; // Tämä rivi poistetaan, jotta käännösvirhe poistuu
+
 extern uint8_t  nmeaProto;
 extern uint16_t nmeaPort;
 extern String   nmeaHost;
@@ -71,10 +75,17 @@ legend{padding:0 6px;color:#444}
   </div>
 </div>
 
+
 <div class=row>
 <label>Offset (deg)<br><span class="small">If you need adjustment</span></label>
 <input id=o type=number min=-180 max=180 step=1>
 <button onclick="setOffset()">Set</button>
+</div>
+
+<div class=row>
+<label>Sumlog K<br><span class="small">Hz per kn (speed calibration)</span></label>
+<input id=sumlogK type=number min=0.1 max=10 step=0.01>
+<button onclick="setSumlogK()">Set</button>
 </div>
 
 <div class=row>
@@ -127,9 +138,11 @@ let typing = false;
 async function refresh(){
   try{
     const r = await fetch('/status'); const j = await r.json();
-  // Info badge removed as requested
     if (!typing && document.activeElement !== document.getElementById('o')) {
       document.getElementById('o').value = j.offset;
+    }
+    if (!typing && document.activeElement !== document.getElementById('sumlogK')) {
+      document.getElementById('sumlogK').value = j.sumlogK;
     }
     document.getElementById('raw').textContent     = j.raw || "-";
     document.getElementById('ang').textContent     = j.angle;
@@ -153,6 +166,8 @@ async function refresh(){
 }
 async function setOffset(){ const v = document.getElementById('o').value;
   await fetch('/trim?offset='+encodeURIComponent(v)); typing=false; setTimeout(refresh,150); }
+async function setSumlogK(){ const v = document.getElementById('sumlogK').value;
+  await fetch('/sumlogk?val='+encodeURIComponent(v)); setTimeout(refresh,150); }
 async function goAngle(){ const v = document.getElementById('a').value;
   await fetch('/goto?deg='+encodeURIComponent(v)); setTimeout(refresh,150); }
 async function toggleFreeze(){ const f = document.getElementById('freeze').checked;
@@ -175,6 +190,11 @@ window.addEventListener('load', () => {
   o.addEventListener('input', () => typing = true);
   o.addEventListener('focus', () => typing = true);
   o.addEventListener('blur',  () => typing = false);
+  const k = document.getElementById('sumlogK');
+  k.addEventListener('input', () => typing = true);
+  k.addEventListener('focus', () => typing = true);
+  k.addEventListener('blur',  () => typing = false);
+
   refresh(); setInterval(refresh,800);
 });
 </script>
@@ -182,8 +202,21 @@ window.addEventListener('load', () => {
 )HTML";
 
 // ---------- HTTP-käsittelijät ----------
+// Sumlog-kerroin, pääohjelmasta
+extern float sumlog_K;
+
 static void handleRoot(){
   g_srv->send_P(200, "text/html", PAGE);
+}
+static void handleSumlogK(){
+  if (g_srv->hasArg("val")) {
+    float v = g_srv->arg("val").toFloat();
+    if (v >= 0.1 && v <= 10.0) {
+      sumlog_K = v;
+      prefs.putFloat("sumlog_K", sumlog_K);
+    }
+  }
+  g_srv->send(200, "text/plain", String("sumlogK=") + sumlog_K);
 }
 static void handleTrim(){
   if (g_srv->hasArg("offset")){
@@ -266,10 +299,11 @@ static void handleReconnectTCP(){
 static void handleStatus(){
   String rawEsc = lastSentenceRaw; rawEsc.replace("\"","\\\"");
   String staSsidEsc = String(sta_ssid); staSsidEsc.replace("\"","\\\"");
-  String j; j.reserve(520);
+  String j; j.reserve(540);
   j += "{";
   j += "\"angle\":";      j += lastAngleSent;
   j += ",\"offset\":";      j += offsetDeg;
+  j += ",\"sumlogK\":";    j += sumlog_K;
   j += ",\"src\":\"";      j += lastSentenceType; j += "\"";
   j += ",\"raw\":\"";      j += rawEsc;  j += "\"";
   j += ",\"port\":";      j += nmeaPort;
@@ -291,6 +325,7 @@ void setupWebUI(WebServer& server){
   server.on("/trim",        HTTP_GET,  handleTrim);
   server.on("/goto",        HTTP_GET,  handleGoto);
   server.on("/freeze",      HTTP_GET,  handleFreeze);
+  server.on("/sumlogk",     HTTP_GET,  handleSumlogK);
   server.on("/savecfg",     HTTP_POST, handleSaveCfg);
   server.on("/reconnect",   HTTP_GET,  handleReconnect);
   server.on("/reconnecttcp",HTTP_GET,  handleReconnectTCP);

@@ -7,6 +7,49 @@
 #include "DFRobot_GP8403.h"
 #include "web_ui.h"
 
+/* ========= Sumlog-nopeusmittari ========= */
+
+#define SUMLOG_GPIO 12         // GPIO12 pulssilähtö
+#define SUMLOG_LEDC_CHANNEL 1  // LEDC-kanava
+#define SUMLOG_LEDC_TIMER   1  // LEDC-timer
+
+float sumlog_speed_kn = 0.0;  // Nopeus solmuina
+float sumlog_K = 1.0;         // Kalibrointikerroin (Hz/kn)
+float sumlog_fmax = 120.0;     // Maksimitaajuus (Hz)
+int pulseDuty = 10;           // Pulssin ON-aika prosentteina, testissä 20%
+
+// FreeRTOS-task Sumlog-pulssille (siirretty tähän)
+void sumlogPulseTask(void* pvParameters) {
+  for (;;) {
+    float freq = sumlog_speed_kn * sumlog_K;
+    if (freq > sumlog_fmax) freq = sumlog_fmax;
+    if (freq < 0.01f) {
+      digitalWrite(SUMLOG_GPIO, LOW);
+      vTaskDelay(100 / portTICK_PERIOD_MS);
+      continue;
+    }
+    float period_ms = 1000.0f / freq;
+  float on_ms  = period_ms * (pulseDuty / 100.0f); // Käytä asetettua duty cyclea
+  float off_ms = period_ms - on_ms;
+    digitalWrite(SUMLOG_GPIO, HIGH);
+    vTaskDelay((int)on_ms / portTICK_PERIOD_MS);
+    digitalWrite(SUMLOG_GPIO, LOW);
+    vTaskDelay((int)off_ms / portTICK_PERIOD_MS);
+  }
+}
+
+void sumlogUpdatePWM() {
+  float freq = sumlog_speed_kn * sumlog_K;
+  if (freq > sumlog_fmax) freq = sumlog_fmax;
+  if (freq < 0.01f) {
+    ledcWrite(SUMLOG_LEDC_CHANNEL, 0); // duty 0% = LOW
+    return;
+  }
+  // LEDC: päivitä taajuus ja duty cycle (50%)
+  ledcSetup(SUMLOG_LEDC_CHANNEL, freq, 8); // 8 bit
+  ledcWrite(SUMLOG_LEDC_CHANNEL, 128);     // 50% duty (0...255)
+}
+
 /* ========= 1) VERKOT (STA + AP) ========= */
 #define DEFAULT_STA_SSID  "Kontu"
 #define DEFAULT_STA_PASS  "8765432A1"
@@ -108,6 +151,11 @@ bool parseMWV(char* line){
   if(ref!='R' && ref!='T') return false;
   if(!(ang>=0 && ang<=360)) return false;
   angleDeg = wrap360((int)lroundf(ang));
+  // Nopeusmittari: MWV:n 3. kenttä = nopeus solmuina
+  if(n>=4) {
+    float spd = atof(f[3]);
+    if(spd>=0 && spd<200) sumlog_speed_kn = spd;
+  }
   lastSentenceType = String("MWV(")+ref+")";
   return true;
 }
@@ -120,6 +168,11 @@ bool parseVWR(char* line){
   if(!(ang>=0 && ang<=180)) return false;
   int awa = (int)lroundf(ang);
   angleDeg = (side=='L') ? wrap360(360-awa) : awa;
+  // Nopeusmittari: VWR:n 3. kenttä = nopeus solmuina (jos löytyy)
+  if(n>=4) {
+    float spd = atof(f[3]);
+    if(spd>=0 && spd<200) sumlog_speed_kn = spd;
+  }
   lastSentenceType = "VWR";
   return true;
 }
@@ -132,6 +185,11 @@ bool parseVWT(char* line){
   if(!(ang>=0 && ang<=180)) return false;
   int awa = (int)lroundf(ang);
   angleDeg = (side=='L') ? wrap360(360-awa) : awa;
+  // Nopeusmittari: VWT:n 3. kenttä = nopeus solmuina (jos löytyy)
+  if(n>=4) {
+    float spd = atof(f[3]);
+    if(spd>=0 && spd<200) sumlog_speed_kn = spd;
+  }
   lastSentenceType = "VWT";
   return true;
 }
@@ -233,6 +291,7 @@ void loadConfig(){
   nmeaPort   = (uint16_t)prefs.getUShort("udp_port", 10110);   // taaksepäin yhteensopiva avain
   nmeaProto  = (uint8_t)prefs.getUChar("proto", PROTO_UDP);
   nmeaHost   = prefs.getString("host", "192.168.4.2");
+  sumlog_K   = prefs.getFloat("sumlog_K", 1.0f);
   String s   = prefs.getString("sta_ssid", DEFAULT_STA_SSID);
   String p   = prefs.getString("sta_pass", DEFAULT_STA_PASS);
   s.toCharArray(sta_ssid, sizeof(sta_ssid));
@@ -275,6 +334,19 @@ void setup() {
   dac.setDACOutRange(dac.eOutputRange10V);
   setOutputsDeg(angleDeg);
 
+  // Sumlog GPIO ja LEDC
+  pinMode(SUMLOG_GPIO, OUTPUT);
+  digitalWrite(SUMLOG_GPIO, LOW); // Bootissa LOW
+  // Käynnistä FreeRTOS-taski Sumlog-pulssille
+  xTaskCreate(
+    sumlogPulseTask,      // Taskin funktio
+    "SumlogPulse",       // Nimi
+    1024,                 // Stack size
+    NULL,                 // Parametrit
+    1,                    // Prioriteetti
+    NULL                  // Task handle
+  );
+
   // Wi-Fi AP+STA
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(AP_SSID, AP_PASS);
@@ -302,4 +374,7 @@ void loop() {
     if(nmeaProto==PROTO_UDP) pollUDP();
     else                    pollTCP();
   }
+
+  // Sumlog-pulssi tuotetaan omassa FreeRTOS-taskissa
+  // ...existing code...
 }
