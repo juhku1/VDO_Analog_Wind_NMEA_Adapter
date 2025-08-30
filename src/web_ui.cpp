@@ -62,6 +62,7 @@ fieldset{border:1px solid #ddd;border-radius:10px;padding:10px}
 legend{padding:0 6px;color:#444}
 .kv{display:flex;gap:8px;align-items:center;margin:6px 0;flex-wrap:wrap}
 .kv label{min-width:140px}
+footer{position:fixed;left:0;bottom:0;width:100%;background:none;text-align:center;font-size:13px;color:#888;padding:8px 0;z-index:10;}
 </style></head><body>
 <div class=card>
 <h1>VDO Logic Wind adapter</h1>
@@ -73,7 +74,14 @@ legend{padding:0 6px;color:#444}
   <div style="font-size:1.5em;font-weight:600;color:#00695c;">
     Outgoing VDO-angle: <span id=ang></span>°
   </div>
+
 </div>
+  <!-- .card content ends here -->
+</div>
+
+<footer style="position:fixed;left:0;bottom:0;width:100%;background:none;text-align:center;font-size:13px;color:#888;padding:8px 0;z-index:10;">
+  © 2025 Juha-Matti Mäntylä &mdash; Licensed under MIT
+</footer>
 
 
 <div class=row>

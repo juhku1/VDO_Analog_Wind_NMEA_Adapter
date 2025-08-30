@@ -1,36 +1,67 @@
-# VDO_Analog_Wind_NMEA_Adapter
+VDO_Analog_Wind_NMEA_Adapter
+This ESP32-based adapter revives legacy VDO wind instruments by allowing them to display wind data from modern NMEA 0183 sources. Originally designed for analog sensors, these gauges can now be integrated into digital marine systems — without replacing the original hardware.
 
-This ESP32 adapter enables legacy VDO wind gauges, which do not natively support NMEA 0183, to display wind direction from modern NMEA wind data – making it easy to integrate these legacy analog instruments with new electronics.
-This ESP32 adapter enables older VDO wind gauges, which do not natively support NMEA 0183, to display wind direction from modern NMEA wind data. It receives various NMEA sentences, calculates the corresponding sine and cosine signals, and drives the analog gauge as if it were connected to its original sensor. I sort of reverse engineered it.
+I reverse engineered the VDO Logic Wind sensor behavior using information from various sources, including the German open-boat-projects.org forum.
 
-The web interface allows configuration, calibration, and manual control, making it easy to integrate legacy instruments with new electronics. Käytetään wifiä, asetuksia pääsee säätämään access pointista, salasana wind12345.
-# Reviving Legacy Analog Wind Meters
-This project brings old VDO analog wind meters back to life by bridging them with modern NMEA 0183 wind data. These meters use SIN/COS voltage signals (2–6 V) to move a physical needle, but were never designed to interface with digital systems.
+Wind Direction Support
+VDO analog wind gauges operate using SIN/COS voltage signals (typically 2–6 V) to move a mechanical needle. This adapter reads NMEA wind sentences (MWV, VWR, VWT), calculates the wind angle, and generates corresponding analog voltages using a GP8403 DAC module.
 
-Using an ESP32 microcontroller and a GP8403 DAC (Gravity: 2-Channel I2C DAC Module 0-10V), this adapter reads NMEA wind sentences, calculates wind angle, and generates the correct analog voltages to drive the meter — effectively reverse engineering the original signal behavior. Valuable info from: https://www.segeln-forum.de/thread/75527-reparaturhilfe-f%C3%BCr-vdo-windmessgeber/
-# Why This Matters
-Legacy analog meters still work: Many are still installed on boats or stored in garages, but lack compatible sensors.
-Original masthead sensors are rare and expensive: Especially for older VDO systems.
-Analog meters are sunlight-readable: Mechanical needles outperform cheap LCDs in bright daylight.
-Sustainability: Reusing existing hardware reduces waste and preserves classic marine aesthetics.
+Devices used for wind direction:
 
-This adapter lets you use any NMEA-compatible wind sensor — including DIY or commercial units — to drive your old analog VDO wind meter.
-Supported NMEA 0183 Sentences: MWV (Wind speed and angle, relative and true), VWR, VWT.
+ESP32 microcontroller – receives NMEA data and calculates wind angle
 
-This is alpha release. Only wind angle is provided. Wind speed is not yet implemented — but will be added in the next version as a pulse output (e.g. 1 Hz = 1 knot).
-# How It Works
-This adapter was reverse engineered to replicate the analog SIN/COS signals used by legacy VDO wind meters.
-NMEA Input: ESP32 receives wind data over Wi-Fi via UDP or TCP. It supports both:
-- STA mode: connects to an external Wi-Fi network (e.g. boat router)
-- AP mode: creates its own Wi-Fi network (VDO-Cal) → If the NMEA source connects to this AP, it can send data directly to ESP32.
-Sentence Parsing: The firmware parses wind angle from NMEA 0183 sentences:
+GP8403 DAC (Gravity: 2-Channel I2C DAC Module 0–10V) – outputs analog voltages
 
-$WIMWV, $IIVWR, $IIVWT - Wind speed is ignored in this first version.
-Signal Generation: The wind angle is converted to analog voltages:
+Analog VDO wind gauge – responds to SIN/COS signals to show wind direction
 
+The ESP32 receives NMEA data over Wi-Fi (UDP or TCP) and outputs:
+
+Koodi
 SIN = 4000 + 2000 × sin(angle)
 COS = 4000 + 2000 × cos(angle)
-These are sent to a GP8403 DAC, which outputs 2–6 V signals to drive the meter.
-Meter Output: The analog wind meter responds to SIN/COS voltages by moving its needle.
+These voltages are sent to the gauge, which responds just like it would with its original masthead sensor.
 
-This is Version 1 — only wind direction is supported. Wind speed (as pulse output) will be added in the next version. This adapter only works with SIN/COS-based meters — not all legacy units are compatible. Use at your own risk.
+Wi-Fi settings and calibration are accessible via a built-in web interface: SSID: VDO-Cal Password: wind12345
+
+Wind Speed Support — Compatible with Wind Logic and Sumlog Gauges
+Wind speed is now supported in two ways:
+
+1. Wind Logic-style gauges
+These gauges interpret wind speed internally from NMEA sentences. The adapter parses wind speed from MWV, VWR, and VWT and makes it available for display or further processing.
+
+2. Sumlog-style analog speedometers
+These expect a pulse signal (e.g. 1 Hz = 1 knot). The ESP32 generates a calibrated pulse output using its LEDC hardware peripheral. The signal is isolated using a PC817 optocoupler, allowing safe interfacing with 12 V systems.
+
+Devices used for wind speed:
+
+ESP32 microcontroller – generates pulse signal
+
+PC817 optocoupler module – provides galvanic isolation and level shifting
+
+Analog Sumlog-style speedometer – interprets pulse frequency as speed
+
+12 V boat power supply – powers the gauge and pull-up circuit
+
+Pulse simulation setup:
+
+ESP32 drives the optocoupler’s LED side
+
+The transistor side pulls the signal line to ground
+
+A pull-up resistor to +12 V completes the circuit (often built into the gauge)
+
+Pulse frequency is proportional to wind speed and can be calibrated via the web interface.
+
+Supported NMEA Sentences
+$WIMWV — Wind speed and angle (relative and true)
+
+$IIVWR — Apparent wind angle and speed
+
+$IIVWT — True wind angle and speed
+
+Compatibility Notes
+This adapter works with SIN/COS-based analog meters only.
+
+Wind direction and wind speed are both supported.
+
+Use at your own risk.
