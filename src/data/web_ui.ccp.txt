@@ -1,0 +1,71 @@
+#include "web_ui.h"
+#include <Preferences.h>
+
+extern Preferences preferences;
+
+// Apu: palauttaa tallennetun tai oletusarvon
+String getOrDefault(const char* key, const char* def) {
+  if (!preferences.isKey(key)) return String(def);
+  return preferences.getString(key, def);
+}
+
+void setupWebUI(WebServer& server) {
+  server.on("/", HTTP_GET, []() {
+    String html = R"rawliteral(
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>VDO Wind Config</title>
+        <style>
+          body { font-family: Arial; background:#eef; padding:20px; }
+          h1 { color: #003366; }
+          label { display:block; margin-top:10px; }
+          input[type="text"] { width: 200px; }
+          .radio { margin-top: 10px; }
+        </style>
+      </head>
+      <body>
+        <h1>VDO Wind Settings</h1>
+        <form method="POST" action="/save">
+          <label>WiFi SSID: <input type="text" name="sta_ssid" value="%STA_SSID%"></label>
+          <label>WiFi Password: <input type="text" name="sta_pass" value="%STA_PASS%"></label>
+          <label>UDP/TCP IP: <input type="text" name="host_ip" value="%HOST_IP%"></label>
+          <label>Port: <input type="text" name="host_port" value="%HOST_PORT%"></label>
+
+          <div class="radio">
+            <input type="radio" id="proto_udp" name="proto" value="0" %UDP_CHECKED%>
+            <label for="proto_udp">UDP</label>
+
+            <input type="radio" id="proto_tcp" name="proto" value="1" %TCP_CHECKED%>
+            <label for="proto_tcp">TCP</label>
+          </div>
+
+          <br><input type="submit" value="Save">
+        </form>
+      </body>
+      </html>
+    )rawliteral";
+
+    html.replace("%STA_SSID%", getOrDefault("sta_ssid", "Kontu"));
+    html.replace("%STA_PASS%", getOrDefault("sta_pass", "8765432A1"));
+    html.replace("%HOST_IP%",  getOrDefault("host_ip", "192.168.1.100"));
+    html.replace("%HOST_PORT%", getOrDefault("host_port", "10110"));
+
+    int proto = preferences.getInt("nmea_proto", 0);
+    html.replace("%UDP_CHECKED%", proto == 0 ? "checked" : "");
+    html.replace("%TCP_CHECKED%", proto == 1 ? "checked" : "");
+
+    server.send(200, "text/html", html);
+  });
+
+  server.on("/save", HTTP_POST, []() {
+    preferences.putString("sta_ssid", server.arg("sta_ssid"));
+    preferences.putString("sta_pass", server.arg("sta_pass"));
+    preferences.putString("host_ip", server.arg("host_ip"));
+    preferences.putString("host_port", server.arg("host_port"));
+    preferences.putInt("nmea_proto", server.arg("proto").toInt());
+
+    server.send(200, "text/html", "<h2>Settings saved. Restart device manually.</h2>");
+  });
+}
