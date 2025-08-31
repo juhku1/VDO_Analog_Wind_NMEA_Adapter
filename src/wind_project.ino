@@ -15,14 +15,14 @@
 
 float sumlog_speed_kn = 0.0;  // Nopeus solmuina
 float sumlog_K = 1.0;         // Kalibrointikerroin (Hz/kn)
-float sumlog_fmax = 120.0;     // Maksimitaajuus (Hz)
+int sumlog_fmax = 150;         // Maksimitaajuus (Hz)
 int pulseDuty = 10;           // Pulssin ON-aika prosentteina, testissä 20%
 
 // FreeRTOS-task Sumlog-pulssille (siirretty tähän)
 void sumlogPulseTask(void* pvParameters) {
   for (;;) {
     float freq = sumlog_speed_kn * sumlog_K;
-    if (freq > sumlog_fmax) freq = sumlog_fmax;
+  if (freq > (float)sumlog_fmax) freq = (float)sumlog_fmax;
     if (freq < 0.01f) {
       digitalWrite(SUMLOG_GPIO, LOW);
       vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -40,7 +40,7 @@ void sumlogPulseTask(void* pvParameters) {
 
 void sumlogUpdatePWM() {
   float freq = sumlog_speed_kn * sumlog_K;
-  if (freq > sumlog_fmax) freq = sumlog_fmax;
+  if (freq > (float)sumlog_fmax) freq = (float)sumlog_fmax;
   if (freq < 0.01f) {
     ledcWrite(SUMLOG_LEDC_CHANNEL, 0); // duty 0% = LOW
     return;
@@ -292,6 +292,7 @@ void loadConfig(){
   nmeaProto  = (uint8_t)prefs.getUChar("proto", PROTO_UDP);
   nmeaHost   = prefs.getString("host", "192.168.4.2");
   sumlog_K   = prefs.getFloat("sumlog_K", 1.0f);
+  sumlog_fmax = prefs.getInt("sumlog_fmax", 150);
   String s   = prefs.getString("sta_ssid", DEFAULT_STA_SSID);
   String p   = prefs.getString("sta_pass", DEFAULT_STA_PASS);
   s.toCharArray(sta_ssid, sizeof(sta_ssid));
@@ -347,6 +348,12 @@ void setup() {
     NULL                  // Task handle
   );
 
+    Preferences prefs;
+    prefs.begin("cfg", false);
+  sumlog_K = prefs.getFloat("sumlog_K", 1.0f);
+  sumlog_fmax = prefs.getInt("sumlog_fmax", 150);
+  pulseDuty = prefs.getInt("pulseDuty", 10);
+    prefs.end();
   // Wi-Fi AP+STA
   WiFi.mode(WIFI_AP_STA);
   String ap_pass = prefs.getString("ap_pass", AP_PASS);

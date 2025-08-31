@@ -12,6 +12,7 @@ enum { PROTO_UDP = 0, PROTO_TCP = 1 };
 extern Preferences prefs;
 
 extern int pulseDuty; // määritelty wind_project.ino:ssa
+extern int sumlog_fmax; // määritelty wind_project.ino:ssa
 // Oletusarvo testiin
 // pulseDuty = 20; // Tämä rivi poistetaan, jotta käännösvirhe poistuu
 
@@ -90,10 +91,23 @@ footer{position:fixed;left:0;bottom:0;width:100%;background:none;text-align:cent
 <button onclick="setOffset()">Set</button>
 </div>
 
+
 <div class=row>
 <label>Sumlog K<br><span class="small">Hz per kn (speed calibration)</span></label>
 <input id=sumlogK type=number min=0.1 max=10 step=0.01>
 <button onclick="setSumlogK()">Set</button>
+</div>
+
+<div class=row>
+<label>Sumlog fmax<br><span class="small">Max pulse frequency (Hz)</span></label>
+<input id=sumlogFmax type=number min=10 max=500 step=1>
+<button onclick="setSumlogFmax()">Set</button>
+</div>
+
+<div class=row>
+<label>Pulse duty<br><span class="small">Pulse ON time (%)</span></label>
+<input id=pulseDuty type=number min=1 max=99 step=1>
+<button onclick="setPulseDuty()">Set</button>
 </div>
 
 <div class=row>
@@ -157,6 +171,12 @@ async function refresh(){
     if (!typing && document.activeElement !== document.getElementById('sumlogK')) {
       document.getElementById('sumlogK').value = j.sumlogK;
     }
+    if (!typing && document.activeElement !== document.getElementById('sumlogFmax')) {
+      document.getElementById('sumlogFmax').value = j.sumlogFmax;
+    }
+    if (!typing && document.activeElement !== document.getElementById('pulseDuty')) {
+      document.getElementById('pulseDuty').value = j.pulseDuty;
+    }
     document.getElementById('raw').textContent     = j.raw || "-";
     document.getElementById('ang').textContent     = j.angle;
     document.getElementById('sta_ip').textContent = j.sta_ip || "-";
@@ -181,6 +201,10 @@ async function setOffset(){ const v = document.getElementById('o').value;
   await fetch('/trim?offset='+encodeURIComponent(v)); typing=false; setTimeout(refresh,150); }
 async function setSumlogK(){ const v = document.getElementById('sumlogK').value;
   await fetch('/sumlogk?val='+encodeURIComponent(v)); setTimeout(refresh,150); }
+async function setSumlogFmax(){ const v = document.getElementById('sumlogFmax').value;
+  await fetch('/sumlogfmax?val='+encodeURIComponent(v)); setTimeout(refresh,150); }
+async function setPulseDuty(){ const v = document.getElementById('pulseDuty').value;
+  await fetch('/pulseduty?val='+encodeURIComponent(v)); setTimeout(refresh,150); }
 async function goAngle(){ const v = document.getElementById('a').value;
   await fetch('/goto?deg='+encodeURIComponent(v)); setTimeout(refresh,150); }
 async function toggleFreeze(){ const f = document.getElementById('freeze').checked;
@@ -208,6 +232,14 @@ window.addEventListener('load', () => {
   k.addEventListener('input', () => typing = true);
   k.addEventListener('focus', () => typing = true);
   k.addEventListener('blur',  () => typing = false);
+  const fmax = document.getElementById('sumlogFmax');
+  fmax.addEventListener('input', () => typing = true);
+  fmax.addEventListener('focus', () => typing = true);
+  fmax.addEventListener('blur',  () => typing = false);
+  const duty = document.getElementById('pulseDuty');
+  duty.addEventListener('input', () => typing = true);
+  duty.addEventListener('focus', () => typing = true);
+  duty.addEventListener('blur',  () => typing = false);
 
   refresh(); setInterval(refresh,800);
 });
@@ -231,6 +263,28 @@ static void handleSumlogK(){
     }
   }
   g_srv->send(200, "text/plain", String("sumlogK=") + sumlog_K);
+}
+
+static void handleSumlogFmax(){
+  if (g_srv->hasArg("val")) {
+    int v = g_srv->arg("val").toInt();
+    if (v >= 10 && v <= 500) {
+      sumlog_fmax = v;
+      prefs.putInt("sumlog_fmax", sumlog_fmax);
+    }
+  }
+  g_srv->send(200, "text/plain", String("sumlogFmax=") + sumlog_fmax);
+}
+
+static void handlePulseDuty(){
+  if (g_srv->hasArg("val")) {
+    int v = g_srv->arg("val").toInt();
+    if (v >= 1 && v <= 99) {
+      pulseDuty = v;
+      prefs.putInt("pulseDuty", pulseDuty);
+    }
+  }
+  g_srv->send(200, "text/plain", String("pulseDuty=") + pulseDuty);
 }
 static void handleTrim(){
   if (g_srv->hasArg("offset")){
@@ -320,6 +374,8 @@ static void handleStatus(){
   j += "\"angle\":";      j += lastAngleSent;
   j += ",\"offset\":";      j += offsetDeg;
   j += ",\"sumlogK\":";    j += sumlog_K;
+  j += ",\"sumlogFmax\":"; j += sumlog_fmax;
+  j += ",\"pulseDuty\":";  j += pulseDuty;
   j += ",\"src\":\"";      j += lastSentenceType; j += "\"";
   j += ",\"raw\":\"";      j += rawEsc;  j += "\"";
   j += ",\"port\":";      j += nmeaPort;
@@ -342,6 +398,8 @@ void setupWebUI(WebServer& server){
   server.on("/goto",        HTTP_GET,  handleGoto);
   server.on("/freeze",      HTTP_GET,  handleFreeze);
   server.on("/sumlogk",     HTTP_GET,  handleSumlogK);
+  server.on("/sumlogfmax",  HTTP_GET,  handleSumlogFmax);
+  server.on("/pulseduty",   HTTP_GET,  handlePulseDuty);
   server.on("/savecfg",     HTTP_POST, handleSaveCfg);
   server.on("/reconnect",   HTTP_GET,  handleReconnect);
   server.on("/reconnecttcp",HTTP_GET,  handleReconnectTCP);

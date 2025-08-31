@@ -19,7 +19,7 @@ FONT_DBG  = ("Consolas", 13, "bold")
 FONT_LBL  = ("Arial", 15, "bold")
 
 SPEED_MIN = 0.0
-SPEED_MAX = 50.0
+SPEED_MAX = 70.0
 SPEED_INIT = 10.5
 SPEED_STEP_FINE = 0.1
 SPEED_STEP_COARSE = 1.0
@@ -211,7 +211,7 @@ ws_box = tk.LabelFrame(root, text="Wind speed", font=FONT_LBL, padx=8, pady=6)
 ws_box.pack(pady=(6,4))
 speed_scale = tk.Scale(ws_box, from_=SPEED_MIN, to=SPEED_MAX,
                        orient=tk.HORIZONTAL, resolution=0.1,
-                       command=speed_changed, length=420, sliderlength=28)
+                       command=speed_changed, length=600, sliderlength=18)
 speed_scale.set(SPEED_INIT)
 speed_scale.pack()
 btns = tk.Frame(ws_box)
