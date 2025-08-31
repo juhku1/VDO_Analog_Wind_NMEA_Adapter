@@ -113,6 +113,11 @@ footer{position:fixed;left:0;bottom:0;width:100%;background:none;text-align:cent
   <label>STA Password<br><span class="small">WiFi password</span></label>
   <input id=pass type=password maxlength=64 style="min-width:220px">
 </div>
+
+ <div class=kv>
+   <label>AP Password<br><span class="small">Access Point password</span></label>
+   <input id=ap_pass type=password maxlength=64 style="min-width:220px">
+ </div>
 <div class=kv>
   <label>Protocol<br><span class="small">UDP or TCP</span></label>
   <select id=proto>
@@ -183,10 +188,11 @@ async function toggleFreeze(){ const f = document.getElementById('freeze').check
 async function saveCfg(){
   const ssid  = document.getElementById('ssid').value;
   const pass  = document.getElementById('pass').value;
+  const ap_pass = document.getElementById('ap_pass').value;
   const port  = document.getElementById('portIn').value;
   const proto = document.getElementById('proto').value;
   const host  = document.getElementById('host').value;
-  const body = new URLSearchParams({ssid, pass, port, proto, host});
+  const body = new URLSearchParams({ssid, pass, ap_pass, port, proto, host});
   await fetch('/savecfg', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
   setTimeout(refresh,200);
 }
@@ -259,6 +265,7 @@ static void handleSaveCfg(){ // POST: ssid, pass, port, proto, host
   }
   String ssid = g_srv->arg("ssid");
   String pass = g_srv->arg("pass");
+  String ap_pass = g_srv->arg("ap_pass");
   String portStr = g_srv->arg("port");
   String protoStr= g_srv->arg("proto");
   String hostStr = g_srv->arg("host");
@@ -274,6 +281,7 @@ static void handleSaveCfg(){ // POST: ssid, pass, port, proto, host
   // talteen NVS:ään
   prefs.putString("sta_ssid", ssid);
   prefs.putString("sta_pass", pass);
+  if (ap_pass.length() > 7) prefs.putString("ap_pass", ap_pass);
   prefs.putUShort("udp_port", newPort);
   prefs.putUChar("proto",    newProto);
   prefs.putString("host",    hostStr);

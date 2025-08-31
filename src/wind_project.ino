@@ -349,7 +349,8 @@ void setup() {
 
   // Wi-Fi AP+STA
   WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP(AP_SSID, AP_PASS);
+  String ap_pass = prefs.getString("ap_pass", AP_PASS);
+  WiFi.softAP(AP_SSID, ap_pass);
   Serial.printf("AP SSID: %s  IP: %s\n", AP_SSID, WiFi.softAPIP().toString().c_str());
   connectSTA();
 
