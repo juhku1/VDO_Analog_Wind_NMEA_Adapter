@@ -1,5 +1,7 @@
 # VDO_Analog_Wind_NMEA_Adapter
-This ESP32-based adapter revives legacy VDO wind instruments by allowing them to display wind data from modern NMEA 0183 sources. Originally designed for analog sensors, these gauges can now be integrated into digital marine systems — without replacing the original hardware.
+This ESP32-based adapter revives legacy VDO wind instruments by allowing them to display wind data from modern NMEA 0183 sources. 
+Originally designed for analog sensors, these gauges can now be integrated into digital marine systems. 
+https://youtube.com/shorts/jcuR95Ze4js?si=s1GGsKVY_nZhsb6T
 
 Only VDO Logic Wind (wind angle & wind speed) and VDO Sumlog (wind speed) have been tested so far.
 
