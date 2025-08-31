@@ -128,7 +128,7 @@ Wind Speed
                              |   |  PC817    |   Optocoupler
                              |   |  LED side |
                              +--->  Anode    |
-                                 |  Cathode  +<--- ESP32 GND
+                                 |  Cathode  +
                                  +-----------+
                                        ||
                                        ||  (Galvanic isolation
