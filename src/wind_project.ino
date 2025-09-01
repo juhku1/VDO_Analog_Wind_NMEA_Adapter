@@ -9,7 +9,8 @@
 
 /* ========= Sumlog-nopeusmittari ========= */
 
-#define SUMLOG_GPIO 12         // GPIO12 pulssilähtö
+int pulsePin1 = 12; // Display 1 pulssipinni
+int pulsePin2 = 13; // Display 2 pulssipinni
 #define SUMLOG_LEDC_CHANNEL 1  // LEDC-kanava
 #define SUMLOG_LEDC_TIMER   1  // LEDC-timer
 
@@ -24,16 +25,19 @@ void sumlogPulseTask(void* pvParameters) {
     float freq = sumlog_speed_kn * sumlog_K;
   if (freq > (float)sumlog_fmax) freq = (float)sumlog_fmax;
     if (freq < 0.01f) {
-      digitalWrite(SUMLOG_GPIO, LOW);
+  digitalWrite(pulsePin1, LOW);
+  digitalWrite(pulsePin2, LOW);
       vTaskDelay(100 / portTICK_PERIOD_MS);
       continue;
     }
     float period_ms = 1000.0f / freq;
   float on_ms  = period_ms * (pulseDuty / 100.0f); // Käytä asetettua duty cyclea
   float off_ms = period_ms - on_ms;
-    digitalWrite(SUMLOG_GPIO, HIGH);
+  digitalWrite(pulsePin1, HIGH);
+  digitalWrite(pulsePin2, HIGH);
     vTaskDelay((int)on_ms / portTICK_PERIOD_MS);
-    digitalWrite(SUMLOG_GPIO, LOW);
+  digitalWrite(pulsePin1, LOW);
+  digitalWrite(pulsePin2, LOW);
     vTaskDelay((int)off_ms / portTICK_PERIOD_MS);
   }
 }
@@ -336,8 +340,12 @@ void setup() {
   setOutputsDeg(angleDeg);
 
   // Sumlog GPIO ja LEDC
-  pinMode(SUMLOG_GPIO, OUTPUT);
-  digitalWrite(SUMLOG_GPIO, LOW); // Bootissa LOW
+  pulsePin1 = prefs.getInt("pulsePin1", 12);
+  pulsePin2 = prefs.getInt("pulsePin2", 13);
+  pinMode(pulsePin1, OUTPUT);
+  pinMode(pulsePin2, OUTPUT);
+  digitalWrite(pulsePin1, LOW); // Bootissa LOW
+  digitalWrite(pulsePin2, LOW); // Bootissa LOW
   // Käynnistä FreeRTOS-taski Sumlog-pulssille
   xTaskCreate(
     sumlogPulseTask,      // Taskin funktio
