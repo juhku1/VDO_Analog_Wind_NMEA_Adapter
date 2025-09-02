@@ -166,8 +166,8 @@ Here is the main thing:
                                               +-------------------------+
 ```
 
-# MORE?
-Remember to use fuses ect not mentioned here.
+## Security
+Remember to use fuses ect not mentioned here. 
 
 ## Tools
 ### NMEA Wind Sender GUI
