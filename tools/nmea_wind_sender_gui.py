@@ -24,7 +24,7 @@ SPEED_INIT = 10.5
 SPEED_STEP_FINE = 0.1
 SPEED_STEP_COARSE = 1.0
 
-DEFAULT_SENTENCE = "VWR"
+DEFAULT_SENTENCES = ("VWR",)
 AWA_INIT = 45.0
 # ===================================================================
 
@@ -33,7 +33,8 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 center = (RADIUS + MARGIN, RADIUS + MARGIN)
 awa_deg = AWA_INIT
 speed_kn = SPEED_INIT
-sentence_type = DEFAULT_SENTENCE
+sentence_types = ["VWR", "MWV(R)", "MWV(T)", "VWT"]
+selected_sentences = None
 
 # Demotila
 demo_on = None
@@ -73,9 +74,13 @@ def build_sentence(angle_deg: float, speed_kn: float, stype: str) -> str:
     return f"${payload}*{calculate_checksum(payload)}\r\n"
 
 def send_nmea(angle_deg, speed_kn):
-    line = build_sentence(angle_deg, speed_kn, sentence_type)
-    sock.sendto(line.encode(), (ESP_IP, ESP_PORT))
-    return line.strip()
+    lines = []
+    for stype, var in selected_sentences.items():
+        if var.get():
+            line = build_sentence(angle_deg, speed_kn, stype)
+            sock.sendto(line.encode(), (ESP_IP, ESP_PORT))
+            lines.append(line.strip())
+    return lines
 # ===================================================================
 
 def draw_ticks():
@@ -106,20 +111,25 @@ def update_arrow(angle):
                        arrow=tk.LAST, fill=color,
                        width=ARROW_WIDTH, tags="arrow")
 
-    nmea_line = send_nmea(awa_deg, speed_kn)
+    nmea_lines = send_nmea(awa_deg, speed_kn)
 
-    if sentence_type in ("VWR", "VWT"):
-        readout_main.config(text=f"{sentence_type}: {mag_vwr:.1f}° {side_vwr}")
-    elif sentence_type == "MWV(R)":
-        readout_main.config(text=f"MWV(R): {awa_deg:.1f}° R")
-    elif sentence_type == "MWV(T)":
-        readout_main.config(text=f"MWV(T): {awa_deg:.1f}° T")
-    else:
-        readout_main.config(text=f"{sentence_type}: {mag_vwr:.1f}° {side_vwr}")
-
-    readout_ws.config(text=f"WS: {speed_kn:.1f} kn")
-    dbg_sent.config(text=f"Sent: {nmea_line}")
+    # Näytä kaikki lähetetyt lauseet
+    dbg_sent.config(text="Sent: " + ", ".join(nmea_lines))
     dbg_raw.config(text=f"AWA raw: {awa_deg:.1f}°")
+
+    # Näytä ensimmäisen lauseen tiedot pääreadoutissa
+    for stype in sentence_types:
+        if selected_sentences[stype].get():
+            if stype in ("VWR", "VWT"):
+                readout_main.config(text=f"{stype}: {mag_vwr:.1f}° {side_vwr}")
+            elif stype == "MWV(R)":
+                readout_main.config(text=f"MWV(R): {awa_deg:.1f}° R")
+            elif stype == "MWV(T)":
+                readout_main.config(text=f"MWV(T): {awa_deg:.1f}° T")
+            else:
+                readout_main.config(text=f"{stype}: {mag_vwr:.1f}° {side_vwr}")
+            break
+    readout_ws.config(text=f"WS: {speed_kn:.1f} kn")
 
 def mouse_move(event):
     dx = event.x - center[0]
@@ -139,10 +149,6 @@ def nudge_speed(delta):
     new_val = min(SPEED_MAX, max(SPEED_MIN, speed_kn + delta))
     speed_scale.set(round(new_val, 1))
 
-def change_sentence():
-    global sentence_type
-    sentence_type = sentence_var.get()
-    update_arrow(awa_deg)
 
 # ============================ DEMOTILA ============================
 def on_demo_toggle():
@@ -186,8 +192,12 @@ def demo_tick():
     root.after(200, demo_tick)
 
 # ============================== UI ================================
+
 root = tk.Tk()
 root.title("AWA → NMEA (VWR/MWV/VWT)")
+
+# BooleanVarit luodaan rootin jälkeen
+selected_sentences = {stype: tk.BooleanVar(value=(stype in DEFAULT_SENTENCES)) for stype in sentence_types}
 
 canvas = tk.Canvas(root,
                    width=2*RADIUS + 2*MARGIN,
@@ -221,20 +231,18 @@ tk.Button(btns, text="−0.1", width=5, command=lambda: nudge_speed(-SPEED_STEP_
 tk.Button(btns, text="+0.1", width=5, command=lambda: nudge_speed(+SPEED_STEP_FINE)).pack(side=tk.LEFT, padx=2)
 tk.Button(btns, text="+1", width=4, command=lambda: nudge_speed(+SPEED_STEP_COARSE)).pack(side=tk.LEFT, padx=2)
 
-# Radiobuttonit kahteen sarakkeeseen automaattisesti
+
+# Checkboxit kahteen sarakkeeseen automaattisesti
 sent_box = tk.LabelFrame(root, text="Sentence", font=FONT_LBL, padx=10, pady=4)
 sent_box.pack(pady=(4,2), fill="x")
 
-sentence_var = tk.StringVar(value=DEFAULT_SENTENCE)
-labels = ("VWR", "MWV(R)", "MWV(T)", "VWT")
-
-rows = math.ceil(len(labels) / 2)
-for i, label in enumerate(labels):
+rows = math.ceil(len(sentence_types) / 2)
+for i, stype in enumerate(sentence_types):
     r = i % rows
     c = i // rows
-    rb = tk.Radiobutton(sent_box, text=label, variable=sentence_var, value=label,
-                        command=change_sentence, font=FONT_LBL)
-    rb.grid(row=r, column=c, sticky="w", padx=6, pady=2)
+    cb = tk.Checkbutton(sent_box, text=stype, variable=selected_sentences[stype],
+                       command=lambda: update_arrow(awa_deg), font=FONT_LBL)
+    cb.grid(row=r, column=c, sticky="w", padx=6, pady=2)
 
 sent_box.grid_columnconfigure(0, weight=1)
 sent_box.grid_columnconfigure(1, weight=1)

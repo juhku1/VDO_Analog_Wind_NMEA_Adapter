@@ -487,13 +487,13 @@ static void handlePulsePin1(){
   if (g_srv->hasArg("val")) {
     int v = g_srv->arg("val").toInt();
     if (v >= 0 && v <= 33) {
-      // Aseta vanha pinni LOW ja INPUT-tilaan
-      pinMode(pulsePin1, INPUT);
-      digitalWrite(pulsePin1, LOW);
-      pulsePin1 = v;
-      pinMode(pulsePin1, OUTPUT);
-      digitalWrite(pulsePin1, LOW);
-      prefs.putInt("pulsePin1", pulsePin1);
+  // Aseta vanha pinni LOW ja INPUT-tilaan
+  pinMode(pulsePin1, INPUT);
+  digitalWrite(pulsePin1, LOW);
+  pulsePin1 = v;
+  pinMode(pulsePin1, OUTPUT);
+  digitalWrite(pulsePin1, LOW);
+  prefs.putInt("pulsePin1", pulsePin1);
     }
   }
   g_srv->send(200, "text/plain", String("pulsePin1=") + pulsePin1);
@@ -502,12 +502,12 @@ static void handlePulsePin2(){
   if (g_srv->hasArg("val")) {
     int v = g_srv->arg("val").toInt();
     if (v >= 0 && v <= 33) {
-      pinMode(pulsePin2, INPUT);
-      digitalWrite(pulsePin2, LOW);
-      pulsePin2 = v;
-      pinMode(pulsePin2, OUTPUT);
-      digitalWrite(pulsePin2, LOW);
-      prefs.putInt("pulsePin2", pulsePin2);
+  pinMode(pulsePin2, INPUT);
+  digitalWrite(pulsePin2, LOW);
+  pulsePin2 = v;
+  pinMode(pulsePin2, OUTPUT);
+  digitalWrite(pulsePin2, LOW);
+  prefs.putInt("pulsePin2", pulsePin2);
     }
   }
   g_srv->send(200, "text/plain", String("pulsePin2=") + pulsePin2);
@@ -530,24 +530,27 @@ static void handleSumlogK(){
 static void handleSumlogFmax(){
   if (g_srv->hasArg("val")) {
     int v = g_srv->arg("val").toInt();
-    if (v >= 10 && v <= 500) {
-      sumlog_fmax = v;
-      prefs.putInt("sumlog_fmax", sumlog_fmax);
+    if (v >= 0 && v <= 33) {
+      pinMode(pulsePin2, INPUT);
+      digitalWrite(pulsePin2, LOW);
+      pulsePin2 = v;
+      pinMode(pulsePin2, OUTPUT);
+      digitalWrite(pulsePin2, LOW);
+      prefs.putInt("pulsePin2", pulsePin2);
     }
   }
-  g_srv->send(200, "text/plain", String("sumlogFmax=") + sumlog_fmax);
+  g_srv->send(200, "text/plain", String("pulsePin2=") + pulsePin2);
 }
-
-static void handlePulseDuty(){
-  if (g_srv->hasArg("val")) {
-    int v = g_srv->arg("val").toInt();
-    if (v >= 1 && v <= 99) {
-      pulseDuty = v;
-      prefs.putInt("pulseDuty", pulseDuty);
+  static void handlePulseDuty(){
+    if (g_srv->hasArg("val")) {
+      int v = g_srv->arg("val").toInt();
+      if (v >= 1 && v <= 99) {
+        pulseDuty = v;
+        prefs.putInt("pulseDuty", pulseDuty);
+      }
     }
+    g_srv->send(200, "text/plain", String("pulseDuty=") + pulseDuty);
   }
-  g_srv->send(200, "text/plain", String("pulseDuty=") + pulseDuty);
-}
 static void handleTrim(){
   if (g_srv->hasArg("offset")){
     int v = g_srv->arg("offset").toInt();

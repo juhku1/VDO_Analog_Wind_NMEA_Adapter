@@ -340,11 +340,8 @@ void setup() {
   setOutputsDeg(angleDeg);
 
   // Sumlog GPIO ja LEDC
-  pulsePin1 = prefs.getInt("pulsePin1", 12);
   pulsePin2 = prefs.getInt("pulsePin2", 13);
-  pinMode(pulsePin1, OUTPUT);
   pinMode(pulsePin2, OUTPUT);
-  digitalWrite(pulsePin1, LOW); // Bootissa LOW
   digitalWrite(pulsePin2, LOW); // Bootissa LOW
   // Käynnistä FreeRTOS-taski Sumlog-pulssille
   xTaskCreate(
