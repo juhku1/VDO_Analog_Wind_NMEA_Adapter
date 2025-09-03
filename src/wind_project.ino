@@ -7,75 +7,41 @@
 #include "DFRobot_GP8403.h"
 #include "web_ui.h"
 
-/* ========= Sumlog-nopeusmittari ========= */
+// LEDC for hardware PWM pulse generation
+#define LEDC_TIMER_RESOLUTION    10
+#define LEDC_BASE_FREQ           5000
 
-int pulsePin1 = 12; // Display 1 pulssipinni
-int pulsePin2 = 13; // Display 2 pulssipinni
-#define SUMLOG_LEDC_CHANNEL 1  // LEDC-kanava
-#define SUMLOG_LEDC_TIMER   1  // LEDC-timer
+/* ========= Globaalit asetukset ja muuttujat ========= */
+Preferences prefs;
+
+// Unified display array (3 displays)
+DisplayConfig displays[3];
+
+// LEDC channels for each display (0-2) with separate timers
+const uint8_t LEDC_CHANNELS[3] = {0, 1, 2};
+const uint8_t LEDC_TIMERS[3] = {0, 1, 2};  // Separate timer for each channel
+bool ledcActive[3] = {false, false, false};
+uint32_t lastFreq[3] = {0, 0, 0};  // Track last frequency to avoid unnecessary changes
 
 float sumlog_speed_kn = 0.0;  // Nopeus solmuina
-float sumlog_K = 1.0;         // Kalibrointikerroin (Hz/kn)
-int sumlog_fmax = 150;         // Maksimitaajuus (Hz)
-int pulseDuty = 10;           // Pulssin ON-aika prosentteina, testissä 20%
 
-// FreeRTOS-task Sumlog-pulssille (siirretty tähän)
-void sumlogPulseTask(void* pvParameters) {
-  for (;;) {
-    float freq = sumlog_speed_kn * sumlog_K;
-  if (freq > (float)sumlog_fmax) freq = (float)sumlog_fmax;
-    if (freq < 0.01f) {
-  digitalWrite(pulsePin1, LOW);
-  digitalWrite(pulsePin2, LOW);
-      vTaskDelay(100 / portTICK_PERIOD_MS);
-      continue;
-    }
-    float period_ms = 1000.0f / freq;
-  float on_ms  = period_ms * (pulseDuty / 100.0f); // Käytä asetettua duty cyclea
-  float off_ms = period_ms - on_ms;
-  digitalWrite(pulsePin1, HIGH);
-  digitalWrite(pulsePin2, HIGH);
-    vTaskDelay((int)on_ms / portTICK_PERIOD_MS);
-  digitalWrite(pulsePin1, LOW);
-  digitalWrite(pulsePin2, LOW);
-    vTaskDelay((int)off_ms / portTICK_PERIOD_MS);
-  }
-}
+// Smooth frequency transition timer
+hw_timer_t * smoothTimer = NULL;
+volatile bool needSmoothUpdate = false;
 
-void sumlogUpdatePWM() {
-  float freq = sumlog_speed_kn * sumlog_K;
-  if (freq > (float)sumlog_fmax) freq = (float)sumlog_fmax;
-  if (freq < 0.01f) {
-    ledcWrite(SUMLOG_LEDC_CHANNEL, 0); // duty 0% = LOW
-    return;
-  }
-  // LEDC: päivitä taajuus ja duty cycle (50%)
-  ledcSetup(SUMLOG_LEDC_CHANNEL, freq, 8); // 8 bit
-  ledcWrite(SUMLOG_LEDC_CHANNEL, 128);     // 50% duty (0...255)
-}
-
-/* ========= 1) VERKOT (STA + AP) ========= */
 #define DEFAULT_STA_SSID  "Kontu"
 #define DEFAULT_STA_PASS  "8765432A1"
 #define AP_SSID           "VDO-Cal"
 #define AP_PASS           "wind12345"
+uint8_t  nmeaProto = PROTO_UDP;
+uint16_t nmeaPort  = 10110;
+String   nmeaHost  = "192.168.4.2";
 
-/* ========= 2) PROTOKOLLA & ETÄOSOITE =========
-   PROTO_UDP: kuunnellaan paikallista UDP-porttia
-   PROTO_TCP: toimitaan TCP-ASIAKKAANA (client) ja luetaan NMEA etäpalvelimelta
-*/
-enum { PROTO_UDP = 0, PROTO_TCP = 1 };
-uint8_t  nmeaProto = PROTO_UDP;         // tallennetaan NVS:ään
-uint16_t nmeaPort  = 10110;             // tallennetaan NVS:ään
-String   nmeaHost  = "192.168.4.2";     // TCP-clientille (NVS)
-
-/* ========= 3) UDP / TCP ========= */
 WiFiUDP udp;
 WiFiClient tcpClient;
 char netBuf[1472];
-uint32_t nextTcpAttemptMs = 0;          // uudelleenyritys-ajastus
+uint32_t nextTcpAttemptMs = 0;
 
-/* ========= 4) GP8403 / DAC ========= */
 #define SDA_PIN   21
 #define SCL_PIN   22
 #define I2C_ADDR  0x5F
@@ -83,30 +49,89 @@ uint32_t nextTcpAttemptMs = 0;          // uudelleenyritys-ajastus
 
 DFRobot_GP8403 dac(&Wire, I2C_ADDR);
 
-const uint8_t CH_SIN = 0;     // VOUT0 = SIN
-const uint8_t CH_COS = 1;     // VOUT1 = COS
-const int VMIN = 2000, VCEN = 4000, VAMP_BASE = 2000, VMAX = 6000; // 2..6 V (mV)
+const uint8_t CH_SIN = 0;
+const uint8_t CH_COS = 1;
+const int VMIN = 2000, VCEN = 4000, VAMP_BASE = 2000, VMAX = 6000;
 
-/* ========= 5) TILA & TRIMMIT ========= */
-Preferences prefs;
-volatile int  offsetDeg = 0;      // -180..+180
-const int     gainPct  = 100;
-const bool    invertSin = false;
+int  offsetDeg = 0;
+int  angleDeg = 0;
+int  lastAngleSent = 0;
+String lastSentenceType = "-";
+String lastSentenceRaw  = "-";
+bool freezeNMEA = false;
 
-int     angleDeg = 0;               // viimeisin kulma (AWA 0..359)
-int     lastAngleSent = 0;          // VDO:lle ajettu kulma (offset huomioitu)
-String lastSentenceType = "-";    // MWV/VWR/VWT/-
-String lastSentenceRaw  = "-";    // viimeisin vastaanotettu rivi
-volatile bool freezeNMEA = false;
-
-/* ========= 6) STA-kredut ========= */
 char sta_ssid[33] = {0};
 char sta_pass[65] = {0};
 
-/* ========= 7) WEB ========= */
 WebServer server(80);
 
-/* ---------- apufunktiot ---------- */
+/* ========= Asetusten tallennus ========= */
+void saveDisplayConfig(int displayNum = -1) {
+  prefs.begin("cfg", false);
+  
+  if (displayNum == -1) {
+    // Tallenna kaikki displayt
+    for (int i = 0; i < 3; i++) {
+      String prefix = "d" + String(i) + "_";
+      prefs.putBool((prefix + "enabled").c_str(), displays[i].enabled);
+      prefs.putString((prefix + "type").c_str(), displays[i].type);
+      prefs.putString((prefix + "sentence").c_str(), displays[i].sentence);
+      prefs.putInt((prefix + "offset").c_str(), displays[i].offsetDeg);
+      prefs.putFloat((prefix + "sumlogK").c_str(), displays[i].sumlogK);
+      prefs.putInt((prefix + "sumlogFmax").c_str(), displays[i].sumlogFmax);
+      prefs.putInt((prefix + "pulseDuty").c_str(), displays[i].pulseDuty);
+      prefs.putInt((prefix + "pulsePin").c_str(), displays[i].pulsePin);
+      prefs.putInt((prefix + "gotoAngle").c_str(), displays[i].gotoAngle);
+      prefs.putBool((prefix + "freeze").c_str(), displays[i].freeze);
+    }
+  } else if (displayNum >= 0 && displayNum < 3) {
+    // Tallenna vain yksi display
+    String prefix = "d" + String(displayNum) + "_";
+    prefs.putBool((prefix + "enabled").c_str(), displays[displayNum].enabled);
+    prefs.putString((prefix + "type").c_str(), displays[displayNum].type);
+    prefs.putString((prefix + "sentence").c_str(), displays[displayNum].sentence);
+    prefs.putInt((prefix + "offset").c_str(), displays[displayNum].offsetDeg);
+    prefs.putFloat((prefix + "sumlogK").c_str(), displays[displayNum].sumlogK);
+    prefs.putInt((prefix + "sumlogFmax").c_str(), displays[displayNum].sumlogFmax);
+    prefs.putInt((prefix + "pulseDuty").c_str(), displays[displayNum].pulseDuty);
+    prefs.putInt((prefix + "pulsePin").c_str(), displays[displayNum].pulsePin);
+    prefs.putInt((prefix + "gotoAngle").c_str(), displays[displayNum].gotoAngle);
+    prefs.putBool((prefix + "freeze").c_str(), displays[displayNum].freeze);
+  }
+  
+  prefs.end();
+}
+
+void loadConfig(){
+  prefs.begin("cfg", false);
+  
+  // Initialize displays with defaults
+  for (int i = 0; i < 3; i++) {
+    String prefix = "d" + String(i) + "_";
+    displays[i].enabled = prefs.getBool((prefix + "enabled").c_str(), i == 0); // Display 0 enabled by default
+    displays[i].type = prefs.getString((prefix + "type").c_str(), "sumlog");
+    displays[i].sentence = prefs.getString((prefix + "sentence").c_str(), "MWV");
+    displays[i].offsetDeg = prefs.getInt((prefix + "offset").c_str(), 0);
+    displays[i].sumlogK = prefs.getFloat((prefix + "sumlogK").c_str(), 1.0f);
+    displays[i].sumlogFmax = prefs.getInt((prefix + "sumlogFmax").c_str(), 150);
+    displays[i].pulseDuty = prefs.getInt((prefix + "pulseDuty").c_str(), 10);
+    displays[i].pulsePin = prefs.getInt((prefix + "pulsePin").c_str(), 12 + i * 2); // Default pins: 12, 14, 16
+    displays[i].gotoAngle = prefs.getInt((prefix + "gotoAngle").c_str(), 0);
+    displays[i].freeze = prefs.getBool((prefix + "freeze").c_str(), false);
+  }
+  
+  offsetDeg        = prefs.getInt("offset", 0);
+  nmeaPort         = (uint16_t)prefs.getUShort("udp_port", 10110);
+  nmeaProto        = (uint8_t)prefs.getUChar("proto", PROTO_UDP);
+  nmeaHost         = prefs.getString("host", "192.168.4.2");
+  String s         = prefs.getString("sta_ssid", DEFAULT_STA_SSID);
+  String p         = prefs.getString("sta_pass", DEFAULT_STA_PASS);
+  s.toCharArray(sta_ssid, sizeof(sta_ssid));
+  p.toCharArray(sta_pass, sizeof(sta_pass));
+  prefs.end();
+}
+
+/* ========= DAC ulostulo ========= */
 static inline int wrap360(int d){ d%=360; if(d<0) d+=360; return d; }
 static inline int mvClamp(int mv){ if(mv<VMIN) return VMIN; if(mv>VMAX) return VMAX; return mv; }
 
@@ -114,8 +139,7 @@ void setOutputsDeg(int deg){
   int adj = wrap360(deg + offsetDeg);
   float r = adj * DEG_TO_RAD;
   float s = sinf(r), c = cosf(r);
-  if (invertSin) s = -s;
-  float amp = VAMP_BASE * (gainPct / 100.0f);
+  float amp = VAMP_BASE;
   int sin_mV = mvClamp(VCEN + (int)lroundf(amp * s));
   int cos_mV = mvClamp(VCEN + (int)lroundf(amp * c));
   dac.setDACOutVoltage(sin_mV, CH_SIN);
@@ -123,10 +147,107 @@ void setOutputsDeg(int deg){
   lastAngleSent = adj;
 }
 
-/* ========= 8) NMEA APURIT ========= */
+/* ========= LEDC Pulse Generation ========= */
+void startDisplay(int displayNum) {
+  if (displayNum < 0 || displayNum >= 3) return;
+  
+  if (!ledcActive[displayNum] && displays[displayNum].enabled) {
+    // Setup LEDC channel with separate timer
+    ledcSetup(LEDC_CHANNELS[displayNum], LEDC_BASE_FREQ, LEDC_TIMER_RESOLUTION);
+    ledcAttachPin(displays[displayNum].pulsePin, LEDC_CHANNELS[displayNum]);
+    ledcActive[displayNum] = true;
+    lastFreq[displayNum] = 0; // Reset frequency tracking
+    
+    Serial.println("Display " + String(displayNum) + " LEDC käynnistetty, timer=" + String(LEDC_TIMERS[displayNum]));
+    updateDisplayPulse(displayNum);
+  }
+}
+
+void stopDisplay(int displayNum) {
+  if (displayNum < 0 || displayNum >= 3) return;
+  
+  if (ledcActive[displayNum]) {
+    ledcWrite(LEDC_CHANNELS[displayNum], 0); // Stop PWM
+    ledcDetachPin(displays[displayNum].pulsePin);
+    ledcActive[displayNum] = false;
+    lastFreq[displayNum] = 0; // Reset frequency tracking
+    pinMode(displays[displayNum].pulsePin, INPUT);
+    Serial.println("Display " + String(displayNum) + " LEDC pysäytetty");
+  }
+}
+
+void updateDisplayPulse(int displayNum) {
+  if (displayNum < 0 || displayNum >= 3 || !ledcActive[displayNum]) return;
+  
+  DisplayConfig &disp = displays[displayNum];
+  
+  if (disp.type == "sumlog") {
+    // Sumlog pulse calculation
+    float freq = sumlog_speed_kn * disp.sumlogK;
+    if (freq > (float)disp.sumlogFmax) freq = (float)disp.sumlogFmax;
+    
+    if (freq < 0.01f) {
+      // Stop PWM when frequency too low
+      if (lastFreq[displayNum] != 0) {
+        ledcWrite(LEDC_CHANNELS[displayNum], 0);
+        lastFreq[displayNum] = 0;
+        Serial.println("Display " + String(displayNum) + " stopped (freq too low)");
+      }
+    } else {
+      // Round frequency to reduce jitter
+      uint32_t freqInt = (uint32_t)(freq + 0.5f);
+      
+      // Only update if frequency actually changed
+      if (freqInt != lastFreq[displayNum]) {
+        // Smooth frequency transition: step max 20% per update
+        uint32_t currentFreq = lastFreq[displayNum];
+        if (currentFreq > 0) {
+          int32_t diff = (int32_t)freqInt - (int32_t)currentFreq;
+          int32_t maxStep = max(1, (int32_t)(currentFreq * 0.2f)); // 20% step limit
+          
+          if (abs(diff) > maxStep) {
+            freqInt = currentFreq + (diff > 0 ? maxStep : -maxStep);
+          }
+        }
+        
+        // Calculate duty cycle (0-1023 for 10-bit resolution)
+        uint32_t duty = (uint32_t)((1023 * disp.pulseDuty) / 100);
+        
+        // Set frequency and duty cycle
+        ledcChangeFrequency(LEDC_CHANNELS[displayNum], freqInt, LEDC_TIMER_RESOLUTION);
+        ledcWrite(LEDC_CHANNELS[displayNum], duty);
+        
+        lastFreq[displayNum] = freqInt;
+        Serial.println("Display " + String(displayNum) + " freq=" + String(freqInt) + "Hz, duty=" + String(disp.pulseDuty) + "%");
+      }
+    }
+  } else {
+    // Logic wind or other types - no pulse, stop PWM
+    if (lastFreq[displayNum] != 0) {
+      ledcWrite(LEDC_CHANNELS[displayNum], 0);
+      lastFreq[displayNum] = 0;
+    }
+  }
+}
+
+// Timer interrupt for smooth frequency transitions
+void IRAM_ATTR onSmoothTimer() {
+  needSmoothUpdate = true;
+}
+
+// Update all active displays (immediate response for accurate measurement)
+void updateAllDisplayPulses() {
+  for (int i = 0; i < 3; i++) {
+    if (ledcActive[i]) {
+      updateDisplayPulse(i);
+    }
+  }
+}
+
+/* ========= NMEA-parsinta ========= */
 bool nmeaChecksumOK(const char* s){
   const char* star = strrchr(s, '*');
-  if(!star) return true; // sallitaan puuttuva cs
+  if(!star) return true;
   uint8_t cs=0; const char* p = s+1;
   while(p && *p && p<star){ cs ^= (uint8_t)(*p++); }
   if(*(star+1)==0 || *(star+2)==0) return true;
@@ -145,7 +266,6 @@ bool hasFormatter(const char* s, const char* fmt3){
   return (p[2]==fmt3[0] && p[3]==fmt3[1] && p[4]==fmt3[2]);
 }
 
-/* ========= 9) NMEA PARSINTA ========= */
 bool parseMWV(char* line){
   char* f[12]; int n = splitCSV(line, f, 12);
   if(n<3) return false;
@@ -155,10 +275,12 @@ bool parseMWV(char* line){
   if(ref!='R' && ref!='T') return false;
   if(!(ang>=0 && ang<=360)) return false;
   angleDeg = wrap360((int)lroundf(ang));
-  // Nopeusmittari: MWV:n 3. kenttä = nopeus solmuina
   if(n>=4) {
     float spd = atof(f[3]);
-    if(spd>=0 && spd<200) sumlog_speed_kn = spd;
+    if(spd>=0 && spd<200) {
+      sumlog_speed_kn = spd;
+      updateAllDisplayPulses();
+    }
   }
   lastSentenceType = String("MWV(")+ref+")";
   return true;
@@ -172,10 +294,12 @@ bool parseVWR(char* line){
   if(!(ang>=0 && ang<=180)) return false;
   int awa = (int)lroundf(ang);
   angleDeg = (side=='L') ? wrap360(360-awa) : awa;
-  // Nopeusmittari: VWR:n 3. kenttä = nopeus solmuina (jos löytyy)
   if(n>=4) {
     float spd = atof(f[3]);
-    if(spd>=0 && spd<200) sumlog_speed_kn = spd;
+    if(spd>=0 && spd<200) {
+      sumlog_speed_kn = spd;
+      updateAllDisplayPulses();
+    }
   }
   lastSentenceType = "VWR";
   return true;
@@ -189,10 +313,12 @@ bool parseVWT(char* line){
   if(!(ang>=0 && ang<=180)) return false;
   int awa = (int)lroundf(ang);
   angleDeg = (side=='L') ? wrap360(360-awa) : awa;
-  // Nopeusmittari: VWT:n 3. kenttä = nopeus solmuina (jos löytyy)
   if(n>=4) {
     float spd = atof(f[3]);
-    if(spd>=0 && spd<200) sumlog_speed_kn = spd;
+    if(spd>=0 && spd<200) {
+      sumlog_speed_kn = spd;
+      updateAllDisplayPulses();
+    }
   }
   lastSentenceType = "VWT";
   return true;
@@ -210,7 +336,7 @@ bool parseNMEALine(char* line){
   return false;
 }
 
-/* ========= 10) UDP/TCP BIND & POLL ========= */
+/* ========= UDP/TCP BIND & POLL ========= */
 void bindUDP(){
   udp.stop();
   if(udp.begin(nmeaPort)){
@@ -220,11 +346,10 @@ void bindUDP(){
   }
 }
 void ensureTCPConnected(){
-  // Yritä yhdistää jos ei yhteyttä ja on aika yrittää
   if (tcpClient.connected()) return;
   uint32_t now = millis();
   if (now < nextTcpAttemptMs) return;
-  nextTcpAttemptMs = now + 3000; // uusi yritys 3 s välein
+  nextTcpAttemptMs = now + 3000;
   Serial.printf("TCP connect to %s:%u ...\n", nmeaHost.c_str(), nmeaPort);
   tcpClient.stop();
   tcpClient.setTimeout(1000);
@@ -283,34 +408,12 @@ void bindTransport(){
     tcpClient.stop();
   } else {
     udp.stop();
-    nextTcpAttemptMs = 0; // yritä heti
+    nextTcpAttemptMs = 0;
     ensureTCPConnected();
   }
 }
 
-/* ========= 11) ASETUSTEN LATAUS/TALLENNUS ========= */
-void loadConfig(){
-  prefs.begin("vdo_cal", false);
-  offsetDeg = prefs.getInt("offset", 0);
-  nmeaPort   = (uint16_t)prefs.getUShort("udp_port", 10110);   // taaksepäin yhteensopiva avain
-  nmeaProto  = (uint8_t)prefs.getUChar("proto", PROTO_UDP);
-  nmeaHost   = prefs.getString("host", "192.168.4.2");
-  sumlog_K   = prefs.getFloat("sumlog_K", 1.0f);
-  sumlog_fmax = prefs.getInt("sumlog_fmax", 150);
-  String s   = prefs.getString("sta_ssid", DEFAULT_STA_SSID);
-  String p   = prefs.getString("sta_pass", DEFAULT_STA_PASS);
-  s.toCharArray(sta_ssid, sizeof(sta_ssid));
-  p.toCharArray(sta_pass, sizeof(sta_pass));
-}
-void saveNetConfig(const String& ssid, const String& pass, uint16_t port, uint8_t proto, const String& host){
-  prefs.putString("sta_ssid", ssid);
-  prefs.putString("sta_pass", pass);
-  prefs.putUShort("udp_port", port);
-  prefs.putUChar("proto",    proto);
-  prefs.putString("host",    host);
-}
-
-/* ========= 12) STA-YHTEYS ========= */
+/* ========= STA-yhteys ========= */
 void connectSTA(){
   WiFi.begin(sta_ssid, sta_pass);
   Serial.printf("Connecting STA to %s", sta_ssid);
@@ -327,58 +430,40 @@ void connectSTA(){
   }
 }
 
-/* ========= 13) SETUP & LOOP ========= */
+/* ========= Setup & loop ========= */
 void setup() {
   Serial.begin(115200);
 
   loadConfig();
 
-  // DAC
+  // Setup smooth transition timer (50ms intervals)
+  smoothTimer = timerBegin(0, 80, true);  // Timer 0, prescaler 80 (1MHz), count up
+  timerAttachInterrupt(smoothTimer, &onSmoothTimer, true);
+  timerAlarmWrite(smoothTimer, 50000, true);  // 50ms = 50000 microseconds
+  timerAlarmEnable(smoothTimer);
+
   Wire.begin(SDA_PIN, SCL_PIN, I2C_HZ);
   while (dac.begin() != 0) { Serial.println("GP8403 init error"); delay(800); }
   dac.setDACOutRange(dac.eOutputRange10V);
   setOutputsDeg(angleDeg);
 
-  // Sumlog GPIO ja LEDC
-  pulsePin2 = prefs.getInt("pulsePin2", 13);
-  pinMode(pulsePin2, OUTPUT);
-  digitalWrite(pulsePin2, LOW); // Bootissa LOW
-  // Käynnistä FreeRTOS-taski Sumlog-pulssille
-  xTaskCreate(
-    sumlogPulseTask,      // Taskin funktio
-    "SumlogPulse",       // Nimi
-    1024,                 // Stack size
-    NULL,                 // Parametrit
-    1,                    // Prioriteetti
-    NULL                  // Task handle
-  );
+  // Initialize enabled displays
+  for (int i = 0; i < 3; i++) {
+    if (displays[i].enabled) {
+      startDisplay(i);
+    }
+  }
 
-    Preferences prefs;
-    prefs.begin("cfg", false);
-  sumlog_K = prefs.getFloat("sumlog_K", 1.0f);
-  sumlog_fmax = prefs.getInt("sumlog_fmax", 150);
-  pulseDuty = prefs.getInt("pulseDuty", 10);
-    prefs.end();
-  // Wi-Fi AP+STA
   WiFi.mode(WIFI_AP_STA);
-  String ap_pass = prefs.getString("ap_pass", AP_PASS);
-  WiFi.softAP(AP_SSID, ap_pass);
-  Serial.printf("AP SSID: %s  IP: %s\n", AP_SSID, WiFi.softAPIP().toString().c_str());
-  connectSTA();
+  WiFi.softAP(AP_SSID, AP_PASS);
 
-  // Bind valittuun sisääntuloon
+  connectSTA();
   bindTransport();
 
-  // Web-reitit ulkoisesta moduulista
   setupWebUI(server);
   server.begin();
 
-  Serial.printf("HTTP STA http://%s  AP http://%s  %s %s:%u\n",
-    WiFi.localIP().toString().c_str(),
-    WiFi.softAPIP().toString().c_str(),
-    (nmeaProto==PROTO_TCP?"TCP client ->":"UDP listen *:"), 
-    (nmeaProto==PROTO_TCP?nmeaHost.c_str():""),
-    nmeaPort);
+  Serial.println("Ready.");
 }
 
 void loop() {
@@ -387,7 +472,12 @@ void loop() {
     if(nmeaProto==PROTO_UDP) pollUDP();
     else                    pollTCP();
   }
-
-  // Sumlog-pulssi tuotetaan omassa FreeRTOS-taskissa
-  // ...existing code...
+  
+  // Handle smooth frequency transitions
+  if (needSmoothUpdate) {
+    needSmoothUpdate = false;
+    updateAllDisplayPulses();
+  }
+  
+  // Pulssit tuotetaan LEDC-hardwarella
 }

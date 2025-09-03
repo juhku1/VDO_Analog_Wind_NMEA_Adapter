@@ -1,0 +1,41 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "PlatformIO Build",
+			"type": "shell",
+			"command": "platformio run",
+			"group": "build"
+		},
+		{
+			"label": "PlatformIO Build LEDC",
+			"type": "shell",
+			"command": "platformio run",
+			"group": "build"
+		},
+		{
+			"label": "PlatformIO Build Final",
+			"type": "shell",
+			"command": "platformio run",
+			"group": "build"
+		},
+		{
+			"label": "PlatformIO Build Stable LEDC",
+			"type": "shell",
+			"command": "platformio run",
+			"group": "build"
+		},
+		{
+			"label": "PlatformIO Build No Rate Limit",
+			"type": "shell",
+			"command": "platformio run",
+			"group": "build"
+		},
+		{
+			"label": "PlatformIO Build Smooth",
+			"type": "shell",
+			"command": "platformio run",
+			"group": "build"
+		}
+	]
+}
