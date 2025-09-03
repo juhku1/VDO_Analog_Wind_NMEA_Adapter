@@ -188,7 +188,8 @@ footer {
       <input id=pulseDuty type=number min=1 max=99 step=1>
       <button onclick="setPulseDuty()">Set</button> <br|
   <label>Pulse GPIO</label>
-  <input id=pulsePin type=number min=0 max=39 step=1>
+  <input id=pulsePin type=number min=0 max=33 step=1>
+  <span style="color:red;font-size:12px;">Vain GPIO 0–33 ovat ulostuloja. Älä käytä 34–39.</span>
   <button onclick="setPulsePin()">Set</button>
     </div>
     <div class=row>
@@ -372,8 +373,15 @@ async function refresh(){
     if (!typing && document.activeElement !== document.getElementById('pulseDuty')) {
       document.getElementById('pulseDuty').value = j.pulseDuty;
     }
-    if (document.getElementById('pulsePin')) document.getElementById('pulsePin').value = j.pulsePin || 0;
-    if (document.getElementById('pulsePin2')) document.getElementById('pulsePin2').value = j.pulsePin2 || 0;
+    if (!typing && document.activeElement !== document.getElementById('pulsePin')) {
+      document.getElementById('pulsePin').value = j.pulsePin || 0;
+    }
+    if (!typing && document.activeElement !== document.getElementById('pulsePin2')) {
+      document.getElementById('pulsePin2').value = j.pulsePin2 || 0;
+    }
+    if (!typing && document.activeElement !== document.getElementById('a')) {
+      document.getElementById('a').value = j.angle;
+    }
     document.getElementById('raw').textContent     = j.raw || "-";
     document.getElementById('ang').textContent     = j.angle;
     document.getElementById('sta_ip').textContent = j.sta_ip || "-";
@@ -395,7 +403,12 @@ async function refresh(){
   }catch(e){}
 }
 async function setPulsePin(){ const v = document.getElementById('pulsePin').value;
-  await fetch('/pulsepin?val='+encodeURIComponent(v)); setTimeout(refresh,150); }
+  if (v >= 0 && v <= 33) {
+    await fetch('/pulsepin?val='+encodeURIComponent(v));
+  } else {
+    alert('GPIO 34–39 ovat vain input-käyttöön. Valitse GPIO 0–33.');
+  }
+  setTimeout(refresh,150); }
 async function setPulsePin2(){ const v = document.getElementById('pulsePin2').value;
   await fetch('/pulsepin2?val='+encodeURIComponent(v)); setTimeout(refresh,150); }
 async function setOffset(){ const v = document.getElementById('o').value;
@@ -473,8 +486,13 @@ extern int pulsePin2;
 static void handlePulsePin1(){
   if (g_srv->hasArg("val")) {
     int v = g_srv->arg("val").toInt();
-    if (v >= 0 && v <= 39) {
+    if (v >= 0 && v <= 33) {
+      // Aseta vanha pinni LOW ja INPUT-tilaan
+      pinMode(pulsePin1, INPUT);
+      digitalWrite(pulsePin1, LOW);
       pulsePin1 = v;
+      pinMode(pulsePin1, OUTPUT);
+      digitalWrite(pulsePin1, LOW);
       prefs.putInt("pulsePin1", pulsePin1);
     }
   }
@@ -483,8 +501,12 @@ static void handlePulsePin1(){
 static void handlePulsePin2(){
   if (g_srv->hasArg("val")) {
     int v = g_srv->arg("val").toInt();
-    if (v >= 0 && v <= 39) {
+    if (v >= 0 && v <= 33) {
+      pinMode(pulsePin2, INPUT);
+      digitalWrite(pulsePin2, LOW);
       pulsePin2 = v;
+      pinMode(pulsePin2, OUTPUT);
+      digitalWrite(pulsePin2, LOW);
       prefs.putInt("pulsePin2", pulsePin2);
     }
   }
