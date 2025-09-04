@@ -33,14 +33,22 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 center = (RADIUS + MARGIN, RADIUS + MARGIN)
 awa_deg = AWA_INIT
 speed_kn = SPEED_INIT
-sentence_types = ["VWR", "MWV(R)", "MWV(T)", "VWT"]
-selected_sentences = None
+sentence_types = ["VWR", "MWV(R)", "MWV(T)", "VWT"]  # Alkuperäiset lauseet
+selected_sentences = None  # Luodaan myöhemmin root:in jälkeen
 
 # Demotila
-demo_on = None
+demo_on = None  # Luodaan myöhemmin
 _demo_side_right = True
 _demo_base_angle = 45.0
 _demo_tick_count = 0
+
+# GPS Simulator
+gps_sim_on = None  # Luodaan myöhemmin
+_gps_lat = 60.1699  # Helsinki
+_gps_lon = 24.9384  # Helsinki  
+_gps_heading = 135.0  # SE (kaakko-lounas)
+_gps_speed = 5.0     # 3-8 solmua
+_gps_tick_count = 0
 
 # ============================ NMEA ================================
 def calculate_checksum(nmea_payload: str) -> str:
@@ -60,17 +68,38 @@ def build_sentence(angle_deg: float, speed_kn: float, stype: str) -> str:
     a360 = angle_deg % 360
     if stype == "VWR":
         mag, side = to_vwr_components(a360)
-        payload = f"IIVWR,{mag:.1f},{side},{speed_kn:.1f},N,,M,,K"
+        payload = f"WIVWR,{mag:.1f},{side},{speed_kn:.1f},N,,M,,K"
     elif stype == "VWT":
         mag, side = to_vwr_components(a360)
-        payload = f"IIVWT,{mag:.1f},{side},{speed_kn:.1f},N,,M,,K"
+        payload = f"WIVWT,{mag:.1f},{side},{speed_kn:.1f},N,,M,,K"
     elif stype == "MWV(R)":
-        payload = f"IIMWV,{a360:.1f},R,{speed_kn:.1f},N,A"
+        payload = f"WIMWV,{a360:.1f},R,{speed_kn:.1f},N,A"
     elif stype == "MWV(T)":
-        payload = f"IIMWV,{a360:.1f},T,{speed_kn:.1f},N,A"
+        payload = f"WIMWV,{a360:.1f},T,{speed_kn:.1f},N,A"
     else:
         mag, side = to_vwr_components(a360)
-        payload = f"IIVWR,{mag:.1f},{side},{speed_kn:.1f},N,,M,,K"
+        payload = f"WIVWR,{mag:.1f},{side},{speed_kn:.1f},N,,M,,K"
+    return f"${payload}*{calculate_checksum(payload)}\r\n"
+
+def build_gps_sentence(lat, lon, speed_kn, heading) -> str:
+    """Generoi GPS NMEA RMC lause"""
+    import time
+    
+    # Muunna desimaaliasteet -> asteet,minuutit
+    lat_deg = int(abs(lat))
+    lat_min = (abs(lat) - lat_deg) * 60
+    lat_dir = 'N' if lat >= 0 else 'S'
+    
+    lon_deg = int(abs(lon))
+    lon_min = (abs(lon) - lon_deg) * 60
+    lon_dir = 'E' if lon >= 0 else 'W'
+    
+    # UTC aika ja päivä
+    utc_time = time.strftime("%H%M%S", time.gmtime())
+    utc_date = time.strftime("%d%m%y", time.gmtime())
+    
+    # RMC sentence: $GPRMC,time,status,lat,lat_dir,lon,lon_dir,speed,heading,date,mag_var,mag_dir*checksum
+    payload = f"GPRMC,{utc_time},A,{lat_deg:02d}{lat_min:07.4f},{lat_dir},{lon_deg:03d}{lon_min:07.4f},{lon_dir},{speed_kn:.1f},{heading:.1f},{utc_date},,,"
     return f"${payload}*{calculate_checksum(payload)}\r\n"
 
 def send_nmea(angle_deg, speed_kn):
@@ -80,6 +109,13 @@ def send_nmea(angle_deg, speed_kn):
             line = build_sentence(angle_deg, speed_kn, stype)
             sock.sendto(line.encode(), (ESP_IP, ESP_PORT))
             lines.append(line.strip())
+    
+    # GPS simulator
+    if gps_sim_on and gps_sim_on.get():
+        gps_line = build_gps_sentence(_gps_lat, _gps_lon, _gps_speed, _gps_heading)
+        sock.sendto(gps_line.encode(), (ESP_IP, ESP_PORT))
+        lines.append(f"GPS: {gps_line.strip()}")
+    
     return lines
 # ===================================================================
 
@@ -113,8 +149,12 @@ def update_arrow(angle):
 
     nmea_lines = send_nmea(awa_deg, speed_kn)
 
-    # Näytä kaikki lähetetyt lauseet
-    dbg_sent.config(text="Sent: " + ", ".join(nmea_lines))
+    # Näytä kaikki lähetetyt lauseet rivitettyinä
+    if nmea_lines:
+        sent_text = "Sent:\n" + "\n".join(nmea_lines)
+    else:
+        sent_text = "Sent: (no sentences selected)"
+    dbg_sent.config(text=sent_text)
     dbg_raw.config(text=f"AWA raw: {awa_deg:.1f}°")
 
     # Näytä ensimmäisen lauseen tiedot pääreadoutissa
@@ -191,6 +231,46 @@ def demo_tick():
     _demo_tick_count += 1
     root.after(200, demo_tick)
 
+def gps_tick():
+    """Päivittää GPS position ja nopeuden"""
+    global _gps_lat, _gps_lon, _gps_speed, _gps_heading, _gps_tick_count
+    
+    if not gps_sim_on or not gps_sim_on.get():
+        return
+    
+    # Liiku kaakko-lounaaseen (135°)
+    # 1 asteminuutti latitude ≈ 1.852 km
+    # 1 asteminuutti longitude ≈ 1.852 km * cos(latitude)
+    
+    import math
+    
+    # Random speed 3-8 solmua
+    if _gps_tick_count % 25 == 0:  # Vaihda nopeus 5s välein
+        _gps_speed = random.uniform(3.0, 8.0)
+    
+    # Liike metriä sekunnissa
+    speed_ms = _gps_speed * 0.514444  # solmu -> m/s
+    distance_per_tick = speed_ms * 0.2  # 200ms tick
+    
+    # Muunna metrit asteiksi
+    lat_delta = -(distance_per_tick / 111320.0) * math.cos(math.radians(_gps_heading))
+    lon_delta = (distance_per_tick / 111320.0) * math.sin(math.radians(_gps_heading)) / math.cos(math.radians(_gps_lat))
+    
+    _gps_lat += lat_delta
+    _gps_lon += lon_delta
+    
+    # Vaihtele hieman kurssia
+    if _gps_tick_count % 50 == 0:  # 10s välein
+        _gps_heading += random.uniform(-5, 5)
+        _gps_heading = _gps_heading % 360
+    
+    _gps_tick_count += 1
+    root.after(200, gps_tick)
+
+def on_gps_toggle():
+    if gps_sim_on.get():
+        gps_tick()
+
 # ============================== UI ================================
 
 root = tk.Tk()
@@ -232,32 +312,40 @@ tk.Button(btns, text="+0.1", width=5, command=lambda: nudge_speed(+SPEED_STEP_FI
 tk.Button(btns, text="+1", width=4, command=lambda: nudge_speed(+SPEED_STEP_COARSE)).pack(side=tk.LEFT, padx=2)
 
 
-# Checkboxit kahteen sarakkeeseen automaattisesti
+# Checkboxit 3 sarakkeessa automaattisella rivityksellä
 sent_box = tk.LabelFrame(root, text="Sentence", font=FONT_LBL, padx=10, pady=4)
 sent_box.pack(pady=(4,2), fill="x")
 
-rows = math.ceil(len(sentence_types) / 2)
+# 3 saraketta maksimissaan, riippumatta lauseiden määrästä
+max_cols = 3
 for i, stype in enumerate(sentence_types):
-    r = i % rows
-    c = i // rows
+    r = i // max_cols  # Rivi
+    c = i % max_cols   # Sarake
     cb = tk.Checkbutton(sent_box, text=stype, variable=selected_sentences[stype],
                        command=lambda: update_arrow(awa_deg), font=FONT_LBL)
     cb.grid(row=r, column=c, sticky="w", padx=6, pady=2)
 
-sent_box.grid_columnconfigure(0, weight=1)
-sent_box.grid_columnconfigure(1, weight=1)
+# Sarakkeet tasapainossa
+for col in range(max_cols):
+    sent_box.grid_columnconfigure(col, weight=1)
 
 # Demotila-checkbox
 demo_on = tk.BooleanVar(value=False)
 demo_chk = tk.Checkbutton(root, text="Demo mode (20° turn every 5s, 80° turn every 20s)",
                           variable=demo_on, command=on_demo_toggle, font=FONT_LBL)
-demo_chk.pack(pady=(4,8))
+demo_chk.pack(pady=(4,2))
+
+# GPS Simulator-checkbox
+gps_sim_on = tk.BooleanVar(value=False)
+gps_chk = tk.Checkbutton(root, text="GPS Simulator (Helsinki → SE-SW, 3-8 kn)",
+                         variable=gps_sim_on, command=on_gps_toggle, font=FONT_LBL)
+gps_chk.pack(pady=(2,8))
 
 # Debug
 dbg = tk.LabelFrame(root, text="Debug", font=FONT_LBL, padx=10, pady=6)
 dbg.pack(pady=(2,10), fill="x")
-dbg_sent = tk.Label(dbg, text="", font=FONT_DBG)
-dbg_sent.pack(anchor="w")
+dbg_sent = tk.Label(dbg, text="", font=FONT_DBG, justify="left", anchor="nw")
+dbg_sent.pack(anchor="w", fill="x")
 dbg_raw = tk.Label(dbg, text="", font=FONT_DBG)
 dbg_raw.pack(anchor="w")
 
