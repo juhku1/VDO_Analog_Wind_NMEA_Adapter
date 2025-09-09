@@ -36,6 +36,117 @@
 			"type": "shell",
 			"command": "platformio run",
 			"group": "build"
+		},
+		{
+			"label": "Build ESP32",
+			"type": "shell",
+			"command": "pio run",
+			"group": "build"
+		},
+		{
+			"label": "Clean ESP32",
+			"type": "shell",
+			"command": "pio run --target clean",
+			"group": "build"
+		},
+		{
+			"label": "Build ESP32 Clean",
+			"type": "shell",
+			"command": "pio run",
+			"group": "build"
+		},
+		{
+			"label": "Upload ESP32",
+			"type": "shell",
+			"command": "pio run --target upload",
+			"group": "build"
+		},
+		{
+			"label": "Build with improved UI",
+			"type": "shell",
+			"command": "pio run",
+			"group": "build"
+		},
+		{
+			"label": "Fix Sumlog display",
+			"type": "shell",
+			"command": "pio run --target upload",
+			"group": "build"
+		},
+		{
+			"label": "Improved Status Display",
+			"type": "shell",
+			"command": "pio run --target upload",
+			"group": "build"
+		},
+		{
+			"label": "NMEA Data Status Fix",
+			"type": "shell",
+			"command": "pio run --target upload",
+			"group": "build"
+		},
+		{
+			"label": "Improved Network Page",
+			"type": "shell",
+			"command": "pio run --target upload",
+			"group": "build"
+		},
+		{
+			"label": "Improved Info Icons",
+			"type": "shell",
+			"command": "pio run --target upload",
+			"group": "build"
+		},
+		{
+			"label": "Remove Redundant Current Labels",
+			"type": "shell",
+			"command": "pio run --target upload",
+			"group": "build"
+		},
+		{
+			"label": "Move Info Icons Right",
+			"type": "shell",
+			"command": "pio run --target upload",
+			"group": "build"
+		},
+		{
+			"label": "New Display Structure",
+			"type": "shell",
+			"command": "pio run --target upload",
+			"group": "build"
+		},
+		{
+			"label": "Fix Logic Wind Pulse",
+			"type": "shell",
+			"command": "pio run --target upload",
+			"group": "build"
+		},
+		{
+			"label": "Build Dynamic Displays",
+			"type": "shell",
+			"command": "pio run",
+			"group": "build"
+		},
+		{
+			"label": "Compile Dynamic Displays",
+			"type": "shell",
+			"command": "pio run",
+			"group": "build"
+		},
+		{
+			"label": "Build Project",
+			"type": "shell",
+			"command": "pio run",
+			"group": "build"
+		},
+		{
+			"label": "Build Project - Modular Drivers",
+			"type": "shell",
+			"command": "pio run",
+			"problemMatcher": [
+				"$platformio"
+			],
+			"group": "build"
 		}
 	]
 }

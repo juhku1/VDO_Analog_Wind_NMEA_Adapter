@@ -18,6 +18,11 @@ struct DisplayConfig {
   int pulsePin;          // GPIO pin
   int gotoAngle;         // Manual angle
   bool freeze;           // Freeze NMEA
+  
+  // Filter settings for stable pulse generation
+  float speedFilterAlpha; // Speed filter coefficient (0.1-0.9)
+  float freqDeadband;    // Frequency deadband (Hz)
+  float maxStepPercent;  // Max frequency step per update (%)
 };
 
 // Globaalit muuttujat jotka sijaitsevat wind_project.ino:ssa
@@ -41,6 +46,7 @@ extern String   nmeaHost;
 extern WiFiClient tcpClient;
 extern char sta_ssid[];
 extern char sta_pass[];
+extern uint32_t lastNmeaDataMs;
 
 // Core funktiot
 void saveDisplayConfig(int displayNum);

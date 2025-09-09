@@ -29,6 +29,10 @@ float sumlog_speed_kn = 0.0;  // Nopeus solmuina
 hw_timer_t * smoothTimer = NULL;
 volatile bool needSmoothUpdate = false;
 
+// Speed filtering for stable pulse generation
+float speedFilter[3] = {0.0, 0.0, 0.0};  // Running average for each display
+// Filter settings are now per-display in DisplayConfig struct
+
 #define DEFAULT_STA_SSID  "Kontu"
 #define DEFAULT_STA_PASS  "8765432A1"
 #define AP_SSID           "VDO-Cal"
@@ -41,6 +45,7 @@ WiFiUDP udp;
 WiFiClient tcpClient;
 char netBuf[1472];
 uint32_t nextTcpAttemptMs = 0;
+uint32_t lastNmeaDataMs = 0;  // Timestamp of last received NMEA data
 
 #define SDA_PIN   21
 #define SCL_PIN   22
@@ -83,6 +88,9 @@ void saveDisplayConfig(int displayNum = -1) {
       prefs.putInt((prefix + "pulsePin").c_str(), displays[i].pulsePin);
       prefs.putInt((prefix + "gotoAngle").c_str(), displays[i].gotoAngle);
       prefs.putBool((prefix + "freeze").c_str(), displays[i].freeze);
+      prefs.putFloat((prefix + "speedFilterAlpha").c_str(), displays[i].speedFilterAlpha);
+      prefs.putFloat((prefix + "freqDeadband").c_str(), displays[i].freqDeadband);
+      prefs.putFloat((prefix + "maxStepPercent").c_str(), displays[i].maxStepPercent);
     }
   } else if (displayNum >= 0 && displayNum < 3) {
     // Tallenna vain yksi display
@@ -97,6 +105,9 @@ void saveDisplayConfig(int displayNum = -1) {
     prefs.putInt((prefix + "pulsePin").c_str(), displays[displayNum].pulsePin);
     prefs.putInt((prefix + "gotoAngle").c_str(), displays[displayNum].gotoAngle);
     prefs.putBool((prefix + "freeze").c_str(), displays[displayNum].freeze);
+    prefs.putFloat((prefix + "speedFilterAlpha").c_str(), displays[displayNum].speedFilterAlpha);
+    prefs.putFloat((prefix + "freqDeadband").c_str(), displays[displayNum].freqDeadband);
+    prefs.putFloat((prefix + "maxStepPercent").c_str(), displays[displayNum].maxStepPercent);
   }
   
   prefs.end();
@@ -118,6 +129,9 @@ void loadConfig(){
     displays[i].pulsePin = prefs.getInt((prefix + "pulsePin").c_str(), 12 + i * 2); // Default pins: 12, 14, 16
     displays[i].gotoAngle = prefs.getInt((prefix + "gotoAngle").c_str(), 0);
     displays[i].freeze = prefs.getBool((prefix + "freeze").c_str(), false);
+    displays[i].speedFilterAlpha = prefs.getFloat((prefix + "speedFilterAlpha").c_str(), 0.8f);
+    displays[i].freqDeadband = prefs.getFloat((prefix + "freqDeadband").c_str(), 0.5f);
+    displays[i].maxStepPercent = prefs.getFloat((prefix + "maxStepPercent").c_str(), 15.0f);
   }
   
   offsetDeg        = prefs.getInt("offset", 0);
@@ -182,8 +196,12 @@ void updateDisplayPulse(int displayNum) {
   DisplayConfig &disp = displays[displayNum];
   
   if (disp.type == "sumlog") {
-    // Sumlog pulse calculation
-    float freq = sumlog_speed_kn * disp.sumlogK;
+    // Apply exponential moving average filter to speed using display-specific setting
+    speedFilter[displayNum] = speedFilter[displayNum] * disp.speedFilterAlpha + 
+                              sumlog_speed_kn * (1.0f - disp.speedFilterAlpha);
+    
+    // Sumlog pulse calculation with filtered speed
+    float freq = speedFilter[displayNum] * disp.sumlogK;
     if (freq > (float)disp.sumlogFmax) freq = (float)disp.sumlogFmax;
     
     if (freq < 0.01f) {
@@ -197,13 +215,22 @@ void updateDisplayPulse(int displayNum) {
       // Round frequency to reduce jitter
       uint32_t freqInt = (uint32_t)(freq + 0.5f);
       
-      // Only update if frequency actually changed
+      // Apply deadband to prevent minor oscillations using display-specific setting
+      if (lastFreq[displayNum] > 0) {
+        float freqDiff = abs((int32_t)freqInt - (int32_t)lastFreq[displayNum]);
+        if (freqDiff < disp.freqDeadband) {
+          // Skip update if change is too small
+          return;
+        }
+      }
+      
+      // Only update if frequency actually changed significantly
       if (freqInt != lastFreq[displayNum]) {
-        // Smooth frequency transition: step max 20% per update
+        // Smooth frequency transition using display-specific step limit
         uint32_t currentFreq = lastFreq[displayNum];
         if (currentFreq > 0) {
           int32_t diff = (int32_t)freqInt - (int32_t)currentFreq;
-          int32_t maxStep = max(1, (int32_t)(currentFreq * 0.2f)); // 20% step limit
+          int32_t maxStep = max(1, (int32_t)(currentFreq * (disp.maxStepPercent / 100.0f)));
           
           if (abs(diff) > maxStep) {
             freqInt = currentFreq + (diff > 0 ? maxStep : -maxStep);
@@ -218,11 +245,65 @@ void updateDisplayPulse(int displayNum) {
         ledcWrite(LEDC_CHANNELS[displayNum], duty);
         
         lastFreq[displayNum] = freqInt;
-        Serial.println("Display " + String(displayNum) + " freq=" + String(freqInt) + "Hz, duty=" + String(disp.pulseDuty) + "%");
+        Serial.println("Display " + String(displayNum) + " freq=" + String(freqInt) + "Hz (filtered=" + String(speedFilter[displayNum], 1) + "kn)");
+      }
+    }
+  } else if (disp.type == "logicwind") {
+    // Logic Wind also needs speed pulse generation (same as Sumlog)
+    // Apply exponential moving average filter to speed using display-specific setting
+    speedFilter[displayNum] = speedFilter[displayNum] * disp.speedFilterAlpha + 
+                              sumlog_speed_kn * (1.0f - disp.speedFilterAlpha);
+    
+    // Logic Wind pulse calculation with filtered speed
+    float freq = speedFilter[displayNum] * disp.sumlogK;
+    if (freq > (float)disp.sumlogFmax) freq = (float)disp.sumlogFmax;
+    
+    if (freq < 0.01f) {
+      // Stop PWM when frequency too low
+      if (lastFreq[displayNum] != 0) {
+        ledcWrite(LEDC_CHANNELS[displayNum], 0);
+        lastFreq[displayNum] = 0;
+        Serial.println("Display " + String(displayNum) + " stopped (freq too low)");
+      }
+    } else {
+      // Round frequency to reduce jitter
+      uint32_t freqInt = (uint32_t)(freq + 0.5f);
+      
+      // Apply deadband to prevent minor oscillations using display-specific setting
+      if (lastFreq[displayNum] > 0) {
+        float freqDiff = abs((int32_t)freqInt - (int32_t)lastFreq[displayNum]);
+        if (freqDiff < disp.freqDeadband) {
+          // Skip update if change is too small
+          return;
+        }
+      }
+      
+      // Only update if frequency actually changed significantly
+      if (freqInt != lastFreq[displayNum]) {
+        // Smooth frequency transition using display-specific step limit
+        uint32_t currentFreq = lastFreq[displayNum];
+        if (currentFreq > 0) {
+          int32_t diff = (int32_t)freqInt - (int32_t)currentFreq;
+          int32_t maxStep = max(1, (int32_t)(currentFreq * (disp.maxStepPercent / 100.0f)));
+          
+          if (abs(diff) > maxStep) {
+            freqInt = currentFreq + (diff > 0 ? maxStep : -maxStep);
+          }
+        }
+        
+        // Calculate duty cycle (0-1023 for 10-bit resolution)
+        uint32_t duty = (uint32_t)((1023 * disp.pulseDuty) / 100);
+        
+        // Set frequency and duty cycle
+        ledcChangeFrequency(LEDC_CHANNELS[displayNum], freqInt, LEDC_TIMER_RESOLUTION);
+        ledcWrite(LEDC_CHANNELS[displayNum], duty);
+        
+        lastFreq[displayNum] = freqInt;
+        Serial.println("Display " + String(displayNum) + " Logic Wind freq=" + String(freqInt) + "Hz (filtered=" + String(speedFilter[displayNum], 1) + "kn)");
       }
     }
   } else {
-    // Logic wind or other types - no pulse, stop PWM
+    // Unknown type - no pulse, stop PWM
     if (lastFreq[displayNum] != 0) {
       ledcWrite(LEDC_CHANNELS[displayNum], 0);
       lastFreq[displayNum] = 0;
@@ -373,6 +454,7 @@ void pollUDP(){
     if(e) *e=0;
     if(*s){
       lastSentenceRaw = String(s);
+      lastNmeaDataMs = millis();  // Mark data received
       if(parseNMEALine(s)) setOutputsDeg(angleDeg);
     }
     if(!e) break;
@@ -394,6 +476,7 @@ void pollTCP(){
       if(e) *e=0;
       if(*s){
         lastSentenceRaw = String(s);
+        lastNmeaDataMs = millis();  // Mark data received
         if(parseNMEALine(s)) setOutputsDeg(angleDeg);
       }
       if(!e) break;

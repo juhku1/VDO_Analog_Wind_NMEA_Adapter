@@ -78,6 +78,9 @@ static void handleDisplayAPI() {
       json += ",\"pulsePin\":" + String(displays[arrayIndex].pulsePin);
       json += ",\"gotoAngle\":" + String(displays[arrayIndex].gotoAngle);
       json += ",\"freeze\":" + String(displays[arrayIndex].freeze ? "true" : "false");
+      json += ",\"speedFilterAlpha\":" + String(displays[arrayIndex].speedFilterAlpha);
+      json += ",\"freqDeadband\":" + String(displays[arrayIndex].freqDeadband);
+      json += ",\"maxStepPercent\":" + String(displays[arrayIndex].maxStepPercent);
       json += "}";
       g_srv->send(200, "application/json", json);
     }
@@ -93,6 +96,9 @@ static void handleDisplayAPI() {
     if (g_srv->hasArg("pulsePin")) displays[arrayIndex].pulsePin = g_srv->arg("pulsePin").toInt();
     if (g_srv->hasArg("gotoAngle")) displays[arrayIndex].gotoAngle = g_srv->arg("gotoAngle").toInt();
     if (g_srv->hasArg("freeze")) displays[arrayIndex].freeze = g_srv->arg("freeze").toInt() != 0;
+    if (g_srv->hasArg("speedFilterAlpha")) displays[arrayIndex].speedFilterAlpha = g_srv->arg("speedFilterAlpha").toFloat();
+    if (g_srv->hasArg("freqDeadband")) displays[arrayIndex].freqDeadband = g_srv->arg("freqDeadband").toFloat();
+    if (g_srv->hasArg("maxStepPercent")) displays[arrayIndex].maxStepPercent = g_srv->arg("maxStepPercent").toFloat();
     
     saveDisplayConfig(arrayIndex);
     
@@ -217,7 +223,11 @@ static void handleReconnectTCP(){
 static void handleStatus(){
   String rawEsc = lastSentenceRaw; rawEsc.replace("\"","\\\"");
   String staSsidEsc = String(sta_ssid); staSsidEsc.replace("\"","\\\"");
-  String j; j.reserve(540);
+  
+  // Get AP client count
+  uint8_t apClientCount = WiFi.softAPgetStationNum();
+  
+  String j; j.reserve(600);
   j += "{";
   j += "\"angle\":";      j += lastAngleSent;
   j += ",\"offset\":";      j += offsetDeg;
@@ -241,9 +251,12 @@ static void handleStatus(){
   j += ",\"host\":\"";      j += nmeaHost; j += "\"";
   j += ",\"tcp_connected\":"; j += (tcpClient.connected()?"true":"false");
   j += ",\"sta_ip\":\"";   j += WiFi.localIP().toString(); j += "\"";
+  j += ",\"sta_ssid\":\""; j += staSsidEsc; j += "\"";
+  j += ",\"sta_connected\":"; j += (WiFi.status() == WL_CONNECTED ? "true" : "false");
   j += ",\"ap_ssid\":\"";  j += WiFi.softAPSSID(); j += "\"";
   j += ",\"ap_ip\":\"";    j += WiFi.softAPIP().toString(); j += "\"";
-  j += ",\"sta_ssid\":\""; j += staSsidEsc; j += "\"";
+  j += ",\"ap_clients\":"; j += apClientCount;
+  j += ",\"nmea_data_age\":"; j += (millis() - lastNmeaDataMs);
   j += ",\"freeze\":";      j += (freezeNMEA?"true":"false");
   j += "}";
   g_srv->send(200, "application/json", j);
