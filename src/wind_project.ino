@@ -149,8 +149,8 @@ void loadConfig(){
 static inline int wrap360(int d){ d%=360; if(d<0) d+=360; return d; }
 static inline int mvClamp(int mv){ if(mv<VMIN) return VMIN; if(mv>VMAX) return VMAX; return mv; }
 
-void setOutputsDeg(int deg){
-  int adj = wrap360(deg + offsetDeg);
+void setOutputsDeg(int displayNum, int deg){
+  int adj = wrap360(deg + displays[displayNum].offsetDeg);
   float r = adj * DEG_TO_RAD;
   float s = sinf(r), c = cosf(r);
   float amp = VAMP_BASE;
@@ -455,7 +455,7 @@ void pollUDP(){
     if(*s){
       lastSentenceRaw = String(s);
       lastNmeaDataMs = millis();  // Mark data received
-      if(parseNMEALine(s)) setOutputsDeg(angleDeg);
+  if(parseNMEALine(s)) setOutputsDeg(0, angleDeg); // TODO: käytä oikeaa displayNum:ia
     }
     if(!e) break;
     s = e+1;
@@ -477,7 +477,7 @@ void pollTCP(){
       if(*s){
         lastSentenceRaw = String(s);
         lastNmeaDataMs = millis();  // Mark data received
-        if(parseNMEALine(s)) setOutputsDeg(angleDeg);
+  if(parseNMEALine(s)) setOutputsDeg(0, angleDeg); // TODO: käytä oikeaa displayNum:ia
       }
       if(!e) break;
       s = e+1;
@@ -528,7 +528,7 @@ void setup() {
   Wire.begin(SDA_PIN, SCL_PIN, I2C_HZ);
   while (dac.begin() != 0) { Serial.println("GP8403 init error"); delay(800); }
   dac.setDACOutRange(dac.eOutputRange10V);
-  setOutputsDeg(angleDeg);
+  setOutputsDeg(0, angleDeg); // TODO: käytä oikeaa displayNum:ia
 
   // Initialize enabled displays
   for (int i = 0; i < 3; i++) {

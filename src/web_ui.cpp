@@ -146,7 +146,7 @@ static void handleTrim(){
     if (v<-180) v=-180; if (v>180) v=180;
     offsetDeg = v;
     prefs.putInt("offset", offsetDeg);
-    setOutputsDeg(angleDeg);
+  setOutputsDeg(0, angleDeg); // TODO: käytä oikeaa displayNum:ia
   }
   g_srv->send(200, "text/plain", String("offset=")+offsetDeg);
 }
@@ -155,7 +155,7 @@ static void handleGoto(){
     int v = g_srv->arg("deg").toInt();
     if (v<0) v=0; if (v>359) v=359;
     angleDeg = v;
-    setOutputsDeg(angleDeg);
+  setOutputsDeg(0, angleDeg); // TODO: käytä oikeaa displayNum:ia
   }
   g_srv->send(200,"text/plain",String("angle=")+angleDeg);
 }

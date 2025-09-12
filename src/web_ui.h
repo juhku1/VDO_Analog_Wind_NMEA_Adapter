@@ -58,7 +58,7 @@ void setupWebUI(WebServer& server);
 void bindTransport();
 void connectSTA();
 void ensureTCPConnected();
-void setOutputsDeg(int deg);
+void setOutputsDeg(int displayNum, int deg);
 
 // Page builders (web_pages.cpp)
 String buildPageHeader(String activeTab);
