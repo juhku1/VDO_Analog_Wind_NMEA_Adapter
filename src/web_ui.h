@@ -46,10 +46,16 @@ extern String   nmeaHost;
 extern WiFiClient tcpClient;
 extern char sta_ssid[];
 extern char sta_pass[];
+extern char ap_pass[];
 extern uint32_t lastNmeaDataMs;
+
+// AP settings constants
+#define AP_SSID "VDO-Cal"
+#define AP_PASS "wind12345"
 
 // Core funktiot
 void saveDisplayConfig(int displayNum);
+void saveNetworkConfig(const char* ssid, const char* pass);
 void startDisplay(int displayNum);
 void stopDisplay(int displayNum);
 void updateDisplayPulse(int displayNum);

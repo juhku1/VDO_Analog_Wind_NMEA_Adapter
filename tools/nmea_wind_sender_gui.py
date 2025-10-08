@@ -409,6 +409,16 @@ def nudge_speed(delta):
     new_val = min(SPEED_MAX, max(SPEED_MIN, speed_kn + delta))
     speed_scale.set(round(new_val, 1))
 
+def periodic_nmea_send():
+    # Lähetä NMEA-lause nykyisillä arvoilla, jos demo/gps ei ole päällä
+    if (not demo_on or not demo_on.get()) and (not gps_sim_on or not gps_sim_on.get()):
+        send_nmea(awa_deg, speed_kn)
+    # Ajasta seuraava lähetys (200 ms = 5 Hz)
+    try:
+        root.after(200, periodic_nmea_send)
+    except Exception:
+        pass
+
 # ============================ DEMOTILA ============================
 def on_demo_toggle():
     if demo_on.get():
@@ -686,7 +696,11 @@ dbg_sent.pack(anchor="w", fill="x")
 dbg_raw = tk.Label(dbg, text="", font=FONT_DBG)
 dbg_raw.pack(anchor="w")
 
+
 update_arrow(awa_deg)
 canvas.bind("<B1-Motion>", mouse_move)
+
+# Käynnistä jatkuva NMEA-lähetys
+periodic_nmea_send()
 
 root.mainloop()

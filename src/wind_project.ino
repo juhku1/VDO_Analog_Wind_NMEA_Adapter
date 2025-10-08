@@ -33,8 +33,6 @@ volatile bool needSmoothUpdate = false;
 float speedFilter[3] = {0.0, 0.0, 0.0};  // Running average for each display
 // Filter settings are now per-display in DisplayConfig struct
 
-#define DEFAULT_STA_SSID  "Kontu"
-#define DEFAULT_STA_PASS  "8765432A1"
 #define AP_SSID           "VDO-Cal"
 #define AP_PASS           "wind12345"
 uint8_t  nmeaProto = PROTO_UDP;
@@ -67,8 +65,12 @@ bool freezeNMEA = false;
 
 char sta_ssid[33] = {0};
 char sta_pass[65] = {0};
+char ap_pass[65] = {0};
 
 WebServer server(80);
+
+/* ========= Funktioiden prototyypit ========= */
+void saveNetworkConfig(const char* ssid, const char* pass);
 
 /* ========= Asetusten tallennus ========= */
 void saveDisplayConfig(int displayNum = -1) {
@@ -137,12 +139,67 @@ void loadConfig(){
   offsetDeg        = prefs.getInt("offset", 0);
   nmeaPort         = (uint16_t)prefs.getUShort("udp_port", 10110);
   nmeaProto        = (uint8_t)prefs.getUChar("proto", PROTO_UDP);
-  nmeaHost         = prefs.getString("host", "192.168.4.2");
-  String s         = prefs.getString("sta_ssid", DEFAULT_STA_SSID);
-  String p         = prefs.getString("sta_pass", DEFAULT_STA_PASS);
+  nmeaHost         = prefs.getString("host", "0.0.0.0");
+  String s         = prefs.getString("sta_ssid", "");  // Ei defaulttia
+  String ap        = prefs.getString("ap_pass", AP_PASS);
+  
+  // Lataa SSID-kohtainen salasana vain jos SSID on määritelty
+  String p = "";
+  if (s.length() > 0) {
+    String passKey = "pass_" + s;  // esim. "pass_openplotter"
+    p = prefs.getString(passKey.c_str(), "");
+    
+    if (p.length() == 0) {
+      // Jos SSID-kohtaista salasanaa ei löydy, kokeile vanhaa tapaa
+      p = prefs.getString("sta_pass", "");
+      if (p.length() > 0) {
+        Serial.printf("Using legacy password for SSID '%s'\n", s.c_str());
+      } else {
+        Serial.printf("No password found for SSID '%s'\n", s.c_str());
+      }
+    }
+  } else {
+    Serial.println("No STA SSID configured, AP-only mode");
+  }
+  
   s.toCharArray(sta_ssid, sizeof(sta_ssid));
   p.toCharArray(sta_pass, sizeof(sta_pass));
+  ap.toCharArray(ap_pass, sizeof(ap_pass));
   prefs.end();
+  
+  // Debug the actual loaded values
+  Serial.printf("Debug - Raw strings: STA_SSID='%s'(%d), STA_PASS='%s'(%d), AP_PASS='%s'(%d)\n", 
+                s.c_str(), s.length(), p.c_str(), p.length(), ap.c_str(), ap.length());
+  Serial.printf("Loaded STA SSID='%s', STA PASS='%s', AP PASS='%s'\n", sta_ssid, sta_pass, ap_pass);
+  Serial.printf("Network: Proto=%s, Host='%s', Port=%u\n", 
+                (nmeaProto == PROTO_UDP) ? "UDP" : "TCP", 
+                nmeaHost.c_str(), nmeaPort);
+}
+
+void saveNetworkConfig(const char* ssid, const char* pass) {
+  if (!ssid || ssid[0] == '\0') return;  // älä kirjoita tyhjää
+  prefs.begin("cfg", false);              // sama namespace kuin loadConfig()
+  
+  // Tallenna SSID
+  prefs.putString("sta_ssid", ssid);
+  
+  // Tallenna salasana SSID-kohtaisella avaimella
+  String passKey = "pass_" + String(ssid);  // esim. "pass_openplotter"
+  if (pass && pass[0] != '\0') {
+    prefs.putString(passKey.c_str(), pass);
+    Serial.printf("Saved password for SSID '%s' with key '%s'\n", ssid, passKey.c_str());
+  }
+  
+  // Tallenna myös vanhan tavan mukaan yhteensopivuuden vuoksi
+  prefs.putString("sta_pass", pass);
+  
+  // Tallenna verkko-asetukset
+  prefs.putUShort("udp_port", nmeaPort);
+  prefs.putUChar("proto",     nmeaProto);
+  prefs.putString("host",     nmeaHost);
+  prefs.end();
+
+  Serial.printf("Saved STA SSID='%s' (len=%u)\n", ssid, (unsigned)strlen(ssid));
 }
 
 /* ========= DAC ulostulo ========= */
@@ -237,15 +294,22 @@ void updateDisplayPulse(int displayNum) {
           }
         }
         
-        // Calculate duty cycle (0-1023 for 10-bit resolution)
-        uint32_t duty = (uint32_t)((1023 * disp.pulseDuty) / 100);
-        
-        // Set frequency and duty cycle
-        ledcChangeFrequency(LEDC_CHANNELS[displayNum], freqInt, LEDC_TIMER_RESOLUTION);
-        ledcWrite(LEDC_CHANNELS[displayNum], duty);
-        
-        lastFreq[displayNum] = freqInt;
-        Serial.println("Display " + String(displayNum) + " freq=" + String(freqInt) + "Hz (filtered=" + String(speedFilter[displayNum], 1) + "kn)");
+        // Vältä 0Hz joka aiheuttaa LEDC virheen
+        if (freqInt == 0) {
+          ledcWrite(LEDC_CHANNELS[displayNum], 0);
+          lastFreq[displayNum] = 0;
+          Serial.println("Display " + String(displayNum) + " stopped (0Hz avoided)");
+        } else {
+          // Calculate duty cycle (0-1023 for 10-bit resolution)
+          uint32_t duty = (uint32_t)((1023 * disp.pulseDuty) / 100);
+          
+          // Set frequency and duty cycle
+          ledcChangeFrequency(LEDC_CHANNELS[displayNum], freqInt, LEDC_TIMER_RESOLUTION);
+          ledcWrite(LEDC_CHANNELS[displayNum], duty);
+          
+          lastFreq[displayNum] = freqInt;
+          Serial.println("Display " + String(displayNum) + " freq=" + String(freqInt) + "Hz (filtered=" + String(speedFilter[displayNum], 1) + "kn)");
+        }
       }
     }
   } else if (disp.type == "logicwind") {
@@ -291,15 +355,22 @@ void updateDisplayPulse(int displayNum) {
           }
         }
         
-        // Calculate duty cycle (0-1023 for 10-bit resolution)
-        uint32_t duty = (uint32_t)((1023 * disp.pulseDuty) / 100);
-        
-        // Set frequency and duty cycle
-        ledcChangeFrequency(LEDC_CHANNELS[displayNum], freqInt, LEDC_TIMER_RESOLUTION);
-        ledcWrite(LEDC_CHANNELS[displayNum], duty);
-        
-        lastFreq[displayNum] = freqInt;
-        Serial.println("Display " + String(displayNum) + " Logic Wind freq=" + String(freqInt) + "Hz (filtered=" + String(speedFilter[displayNum], 1) + "kn)");
+        // Vältä 0Hz joka aiheuttaa LEDC virheen
+        if (freqInt == 0) {
+          ledcWrite(LEDC_CHANNELS[displayNum], 0);
+          lastFreq[displayNum] = 0;
+          Serial.println("Display " + String(displayNum) + " Logic Wind stopped (0Hz avoided)");
+        } else {
+          // Calculate duty cycle (0-1023 for 10-bit resolution)
+          uint32_t duty = (uint32_t)((1023 * disp.pulseDuty) / 100);
+          
+          // Set frequency and duty cycle
+          ledcChangeFrequency(LEDC_CHANNELS[displayNum], freqInt, LEDC_TIMER_RESOLUTION);
+          ledcWrite(LEDC_CHANNELS[displayNum], duty);
+          
+          lastFreq[displayNum] = freqInt;
+          Serial.println("Display " + String(displayNum) + " Logic Wind freq=" + String(freqInt) + "Hz (filtered=" + String(speedFilter[displayNum], 1) + "kn)");
+        }
       }
     }
   } else {
@@ -486,6 +557,8 @@ void pollTCP(){
 }
 
 void bindTransport(){
+  Serial.printf("bindTransport: Using %s protocol on port %u\n", 
+                (nmeaProto == PROTO_UDP) ? "UDP" : "TCP", nmeaPort);
   if(nmeaProto == PROTO_UDP){
     bindUDP();
     tcpClient.stop();
@@ -498,6 +571,13 @@ void bindTransport(){
 
 /* ========= STA-yhteys ========= */
 void connectSTA(){
+  // Yhdistä vain jos SSID on määritelty
+  if (strlen(sta_ssid) == 0) {
+    Serial.println("No STA SSID configured, skipping STA connection");
+    return;
+  }
+  
+  Serial.printf("Attempting STA connection to SSID='%s' with password='%s'\n", sta_ssid, sta_pass);
   WiFi.begin(sta_ssid, sta_pass);
   Serial.printf("Connecting STA to %s", sta_ssid);
   uint32_t t0=millis();
@@ -538,9 +618,19 @@ void setup() {
   }
 
   WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP(AP_SSID, AP_PASS);
-
+  
+  // Varmista että ap_pass ei ole tyhjä
+  if (strlen(ap_pass) < 8) {
+    strcpy(ap_pass, AP_PASS);
+    Serial.printf("AP password was empty, using default: %s\n", ap_pass);
+  }
+  
+  // Käynnistä STA ensin
   connectSTA();
+  
+  // Sitten AP
+  WiFi.softAP(AP_SSID, ap_pass);
+  Serial.printf("AP started: %s with password: %s\n", AP_SSID, ap_pass);
   bindTransport();
 
   setupWebUI(server);

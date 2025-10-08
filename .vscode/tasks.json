@@ -147,6 +147,34 @@
 				"$platformio"
 			],
 			"group": "build"
+		},
+		{
+			"label": "Monitor ESP32 115200",
+			"type": "shell",
+			"command": "pio device monitor --baud 115200",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Monitor ESP32 115200",
+			"type": "shell",
+			"command": "pio device monitor --baud 115200",
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Serial Monitor",
+			"type": "shell",
+			"command": "pio device monitor --baud 115200",
+			"isBackground": true
+		},
+		{
+			"label": "Serial Monitor 115200",
+			"type": "shell",
+			"command": "pio device monitor --baud 115200",
+			"isBackground": true
 		}
 	]
 }

@@ -186,13 +186,18 @@ static void handleSaveCfg(){ // POST: ssid, pass, port, proto, host
   uint8_t newProto = (protoStr.equalsIgnoreCase("tcp") ? PROTO_TCP : PROTO_UDP);
   if (hostStr.length()==0) hostStr = nmeaHost; // jätä ennalleen jos tyhjä
 
-  // talteen NVS:ään
-  prefs.putString("sta_ssid", ssid);
-  prefs.putString("sta_pass", pass);
+  // talleen NVS:ään käyttäen uutta SSID-kohtaista järjestelmää
+  if (ssid.length() > 0 && pass.length() >= 0) {
+    saveNetworkConfig(ssid.c_str(), pass.c_str());
+  }
+  
+  // Tallenna muut asetukset
+  prefs.begin("cfg", false);
   if (ap_pass.length() > 7) prefs.putString("ap_pass", ap_pass);
   prefs.putUShort("udp_port", newPort);
   prefs.putUChar("proto",    newProto);
   prefs.putString("host",    hostStr);
+  prefs.end();
 
   // päivitä RAM-kopiot
   if (ssid.length()) ssid.toCharArray(sta_ssid, 33);
@@ -212,6 +217,14 @@ static void handleSaveCfg(){ // POST: ssid, pass, port, proto, host
 static void handleReconnect(){
   WiFi.disconnect(true, false); // pudota STA
   delay(200);
+  
+  // Varmista että WiFi on dual-mode tilassa
+  WiFi.mode(WIFI_AP_STA);
+  
+  // Käynnistä AP uudelleen
+  WiFi.softAP(AP_SSID, ap_pass);
+  
+  // Yhdistä STA
   connectSTA();
   g_srv->send(200, "text/plain", "reconnecting");
 }

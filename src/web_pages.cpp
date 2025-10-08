@@ -428,28 +428,48 @@ String buildNetworkPage() {
 
 <script>
 async function saveCfg(){
-  const ssid  = document.getElementById('ssid').value;
-  const pass  = document.getElementById('pass').value;
-  const ap_pass = document.getElementById('ap_pass').value;
-  const port  = document.getElementById('portIn').value;
-  const proto = document.getElementById('proto').value;
-  const host  = document.getElementById('host').value;
-  const body = new URLSearchParams({ssid, pass, ap_pass, port, proto, host});
-  await fetch('/savecfg', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
-  setTimeout(refresh,200);
+  try {
+    showMessage('Saving settings...', 'info');
+    
+    const ssid  = document.getElementById('ssid').value;
+    const pass  = document.getElementById('pass').value;
+    const ap_pass = document.getElementById('ap_pass').value;
+    const port  = document.getElementById('portIn').value;
+    const proto = document.getElementById('proto').value;
+    const host  = document.getElementById('host').value;
+    const body = new URLSearchParams({ssid, pass, ap_pass, port, proto, host});
+    
+    await fetch('/savecfg', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
+    showMessage('Settings saved successfully!', 'success');
+    setTimeout(refresh,200);
+  } catch(e) {
+    showMessage('Error saving settings: ' + e.message, 'error');
+  }
 }
 async function saveAndReconnect(){
-  const ssid  = document.getElementById('ssid').value;
-  const pass  = document.getElementById('pass').value;
-  const ap_pass = document.getElementById('ap_pass').value;
-  const port  = document.getElementById('portIn').value;
-  const proto = document.getElementById('proto').value;
-  const host  = document.getElementById('host').value;
-  const body = new URLSearchParams({ssid, pass, ap_pass, port, proto, host});
-  await fetch('/savecfg', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
-  await fetch('/reconnect');
-  await fetch('/reconnecttcp');
-  setTimeout(refresh,1000);
+  try {
+    // Näytä "Saving..." -ilmoitus
+    showMessage('Saving settings...', 'info');
+    
+    const ssid  = document.getElementById('ssid').value;
+    const pass  = document.getElementById('pass').value;
+    const ap_pass = document.getElementById('ap_pass').value;
+    const port  = document.getElementById('portIn').value;
+    const proto = document.getElementById('proto').value;
+    const host  = document.getElementById('host').value;
+    const body = new URLSearchParams({ssid, pass, ap_pass, port, proto, host});
+    
+    await fetch('/savecfg', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
+    showMessage('Settings saved! Reconnecting...', 'success');
+    
+    await fetch('/reconnect');
+    await fetch('/reconnecttcp');
+    
+    showMessage('Settings applied successfully!', 'success');
+    setTimeout(refresh,1000);
+  } catch(e) {
+    showMessage('Error saving settings: ' + e.message, 'error');
+  }
 }
 
 // Load current values
@@ -475,6 +495,31 @@ async function loadNetworkValues() {
     document.getElementById('hostValue').textContent = '(current: ' + (j.host || 'not set') + ')';
     document.getElementById('portValue').textContent = '(current: ' + (j.port || 'not set') + ')';
   } catch(e) {}
+}
+
+// Näyttää ilmoituksen käyttäjälle
+function showMessage(text, type = 'info') {
+  // Poista vanha ilmoitus
+  const existing = document.getElementById('notification');
+  if (existing) existing.remove();
+  
+  // Luo uusi ilmoitus
+  const msg = document.createElement('div');
+  msg.id = 'notification';
+  msg.textContent = text;
+  msg.style.cssText = `
+    position: fixed; top: 20px; right: 20px; z-index: 1000;
+    padding: 12px 16px; border-radius: 4px; color: white; font-weight: bold;
+    background: ${type === 'success' ? '#28a745' : type === 'error' ? '#dc3545' : '#007bff'};
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  `;
+  
+  document.body.appendChild(msg);
+  
+  // Poista automaattisesti 3 sekunnin kuluttua
+  setTimeout(() => {
+    if (msg.parentNode) msg.remove();
+  }, 3000);
 }
 
 window.addEventListener('load', () => {
@@ -656,19 +701,19 @@ String buildDisplayPage(int displayNum) {
   <div class=row>
     <label>Speed Filter Alpha</label>
     <input id=speedFilterAlpha type=number min=0.1 max=0.9 step=0.01 placeholder="loading...">
-    <span class="info-icon" data-tooltip="Filter responsiveness: 0.1=fast response, 0.9=stable/slow">i</span>
+  <span class="info-icon" data-tooltip="How much the output is smoothed. Lower values: slower, more stable response (less jitter). Higher values: faster response, less smoothing.">i</span>
   </div>
   
   <div class=row>
     <label>Frequency Deadband (Hz)</label>
     <input id=freqDeadband type=number min=0.1 max=5.0 step=0.1 placeholder="loading...">
-    <span class="info-icon" data-tooltip="Minimum frequency change to trigger update">i</span>
+  <span class="info-icon" data-tooltip="Small changes in speed below this threshold are ignored. Prevents the display from moving due to noise or tiny fluctuations.">i</span>
   </div>
   
   <div class=row>
     <label>Max Step Percentage (%)</label>
     <input id=maxStepPercent type=number min=5 max=50 step=1 placeholder="loading...">
-    <span class="info-icon" data-tooltip="Maximum frequency change per update cycle">i</span>
+  <span class="info-icon" data-tooltip="Limits how much the output can change in a single update. Prevents sudden jumps and keeps the display movement natural.">i</span>
   </div>
   
 </fieldset>
