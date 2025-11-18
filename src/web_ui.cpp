@@ -13,142 +13,7 @@ static WebServer* g_srv = nullptr;
 
 // Page handlers
 static void handleHome() {
-  // Make safe copies to avoid race conditions with Core 1
-  bool connected = tcpConnected;  // Read volatile flag set by Core 1
-  String angle = String(lastAngleSent);
-  String nmea = lastSentenceRaw;
-  String ip = WiFi.localIP().toString();
-  
-  String html = R"HTML(
-<!doctype html><html><head>
-<meta charset="UTF-8">
-<meta name=viewport content="width=device-width,initial-scale=1">
-<title>VDO Logic Wind adapter</title>
-<meta http-equiv='refresh' content='3'>
-
-<style>
-body {
-  font-family: system-ui,Segoe UI,Arial;
-  margin: 0;
-  background: #eaf6fb;
-}
-.card {
-  max-width: 780px;
-  margin: 18px auto;
-  padding: 8px;
-  background: none;
-}
-fieldset {
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 14px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  padding: 10px 8px;
-  margin-bottom: 18px;
-}
-legend {
-  padding: 0 10px;
-  color: #444;
-  font-weight: 500;
-  font-size: 20px;
-}
-.kv {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  margin: 6px 0;
-  flex-wrap: wrap;
-}
-.kv-label {
-  min-width: 120px;
-  font-weight: 500;
-  color: #333;
-}
-.kv-value {
-  color: #666;
-}
-.status-ok { color: #28a745; font-weight: bold; }
-.status-error { color: #dc3545; font-weight: bold; }
-.nav {
-  display: flex;
-  background: #fff;
-  border-radius: 8px;
-  margin-bottom: 12px;
-  overflow: hidden;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  flex-wrap: wrap;
-}
-.nav a {
-  flex: 1;
-  min-width: 100px;
-  padding: 12px 8px;
-  text-decoration: none;
-  text-align: center;
-  color: #666;
-  border-right: 1px solid #ddd;
-  font-weight: 500;
-}
-.nav a:last-child {
-  border-right: none;
-}
-.nav a.active {
-  background: #28a745;
-  color: white;
-}
-.nav a:hover:not(.active) {
-  background: #f8f9fa;
-}
-</style>
-</head><body>
-
-<div class="card">
-  <div class="nav">
-    <a href="/" class="active">Home</a>
-    <a href="/network">Network</a>
-    <a href="/display1">Display 1</a>
-    <a href="/display2">Display 2</a>
-    <a href="/display3">Display 3</a>
-  </div>
-
-  <fieldset>
-    <legend>VDO Wind Adapter Status</legend>
-    <div class="kv">
-      <span class="kv-label">Status:</span>
-      <span class="kv-value status-ok">Running</span>
-    </div>
-    <div class="kv">
-      <span class="kv-label">NMEA Connection:</span>
-      <span class="kv-value )HTML";
-  
-  html += connected ? "<span class='status-ok'>Connected</span>" : "<span class='status-error'>Disconnected</span>";
-  
-  html += R"HTML(</span>
-    </div>
-    <div class="kv">
-      <span class="kv-label">Last NMEA:</span>
-      <span class="kv-value">)HTML";
-  html += nmea;
-  html += R"HTML(</span>
-    </div>
-    <div class="kv">
-      <span class="kv-label">Wind Angle:</span>
-      <span class="kv-value">)HTML";
-  html += angle;
-  html += R"HTML(°</span>
-    </div>
-    <div class="kv">
-      <span class="kv-label">IP Address:</span>
-      <span class="kv-value">)HTML";
-  html += ip;
-  html += R"HTML(</span>
-    </div>
-  </fieldset>
-</div>
-
-</body></html>
-)HTML";
-  
-  g_srv->send(200, "text/html", html);
+  g_srv->send(200, "text/html", buildStatusPage());
 }
 
 static void handleNetwork() {
@@ -212,10 +77,6 @@ static void handleDisplayAPI() {
       json += ",\"pulseDuty\":" + String(displays[arrayIndex].pulseDuty);
       json += ",\"pulsePin\":" + String(displays[arrayIndex].pulsePin);
       json += ",\"gotoAngle\":" + String(displays[arrayIndex].gotoAngle);
-      json += ",\"freeze\":" + String(displays[arrayIndex].freeze ? "true" : "false");
-      json += ",\"speedFilterAlpha\":" + String(displays[arrayIndex].speedFilterAlpha);
-      json += ",\"freqDeadband\":" + String(displays[arrayIndex].freqDeadband);
-      json += ",\"maxStepPercent\":" + String(displays[arrayIndex].maxStepPercent);
       json += "}";
       g_srv->send(200, "application/json", json);
     }
@@ -230,10 +91,6 @@ static void handleDisplayAPI() {
     if (g_srv->hasArg("pulseDuty")) displays[arrayIndex].pulseDuty = g_srv->arg("pulseDuty").toInt();
     if (g_srv->hasArg("pulsePin")) displays[arrayIndex].pulsePin = g_srv->arg("pulsePin").toInt();
     if (g_srv->hasArg("gotoAngle")) displays[arrayIndex].gotoAngle = g_srv->arg("gotoAngle").toInt();
-    if (g_srv->hasArg("freeze")) displays[arrayIndex].freeze = g_srv->arg("freeze").toInt() != 0;
-    if (g_srv->hasArg("speedFilterAlpha")) displays[arrayIndex].speedFilterAlpha = g_srv->arg("speedFilterAlpha").toFloat();
-    if (g_srv->hasArg("freqDeadband")) displays[arrayIndex].freqDeadband = g_srv->arg("freqDeadband").toFloat();
-    if (g_srv->hasArg("maxStepPercent")) displays[arrayIndex].maxStepPercent = g_srv->arg("maxStepPercent").toFloat();
     
     saveDisplayConfig(arrayIndex);
     
@@ -293,13 +150,6 @@ static void handleGoto(){
   setOutputsDeg(0, angleDeg); // TODO: käytä oikeaa displayNum:ia
   }
   g_srv->send(200,"text/plain",String("angle=")+angleDeg);
-}
-static void handleFreeze(){
-  if (g_srv->hasArg("on")){
-    int v = g_srv->arg("on").toInt();
-    freezeNMEA = (v!=0);
-  }
-  g_srv->send(200,"text/plain",String("freeze=")+(freezeNMEA?"1":"0"));
 }
 static void handleSaveCfg(){ // POST: ssid, pass, port, proto, host
   if (g_srv->method() != HTTP_POST){
@@ -395,6 +245,10 @@ static void handleStatus(){
   j += "]";
   j += ",\"src\":\"";      j += lastSentenceType; j += "\"";
   j += ",\"raw\":\"";      j += rawEsc;  j += "\"";
+  j += ",\"has_mwv_r\":"; j += (hasMwvR ? "true" : "false");
+  j += ",\"has_mwv_t\":"; j += (hasMwvT ? "true" : "false");
+  j += ",\"has_vwr\":"; j += (hasVwr ? "true" : "false");
+  j += ",\"has_vwt\":"; j += (hasVwt ? "true" : "false");
   j += ",\"port\":";      j += nmeaPort;
   j += ",\"proto\":\"";      
   j += (nmeaProto==PROTO_TCP?"TCP":nmeaProto==PROTO_HTTP?"HTTP":"UDP"); 
@@ -408,7 +262,6 @@ static void handleStatus(){
   j += ",\"ap_ip\":\"";    j += WiFi.softAPIP().toString(); j += "\"";
   j += ",\"ap_clients\":"; j += apClientCount;
   j += ",\"nmea_data_age\":"; j += (millis() - lastNmeaDataMs);
-  j += ",\"freeze\":";      j += (freezeNMEA?"true":"false");
   j += "}";
   g_srv->send(200, "application/json", j);
 }
@@ -430,7 +283,6 @@ void setupWebUI(WebServer& server){
   // Legacy endpoints (keep for backward compatibility)
   server.on("/trim",        HTTP_GET,  handleTrim);
   server.on("/goto",        HTTP_GET,  handleGoto);
-  server.on("/freeze",      HTTP_GET,  handleFreeze);
   server.on("/sumlogk",     HTTP_GET,  handleSumlogK);
   server.on("/sumlogk2",    HTTP_GET,  handleSumlogK2);
   server.on("/sumlogfmax",  HTTP_GET,  handleSumlogFmax);

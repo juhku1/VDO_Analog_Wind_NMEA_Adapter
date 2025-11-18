@@ -11,6 +11,9 @@ String buildPageHeader(String activeTab) {
 <!doctype html><html><head>
 <meta charset="UTF-8">
 <meta name=viewport content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>VDO Logic Wind adapter</title>
 
 <style>
@@ -156,6 +159,8 @@ async function refresh(){
     // Update common status elements if they exist
     const rawEl = document.getElementById('raw');
     const angEl = document.getElementById('ang');
+    const spdEl = document.getElementById('spd');
+    const sentenceTypesEl = document.getElementById('sentence_types');
     
     // Legacy elements
     const staIpEl = document.getElementById('sta_ip');
@@ -175,6 +180,17 @@ async function refresh(){
     
     if (rawEl) rawEl.textContent = j.raw || "-";
     if (angEl) angEl.textContent = j.angle;
+    if (spdEl) spdEl.textContent = j.speed_kn.toFixed(2);
+    
+    // Build sentence types list
+    if (sentenceTypesEl) {
+      let types = [];
+      if (j.has_mwv_r) types.push("MWV(R)");
+      if (j.has_mwv_t) types.push("MWV(T)");
+      if (j.has_vwr) types.push("VWR");
+      if (j.has_vwt) types.push("VWT");
+      sentenceTypesEl.textContent = types.length > 0 ? types.join(", ") : "waiting...";
+    }
     
     // Legacy status (for compatibility)
     if (staIpEl) staIpEl.textContent = j.sta_ip || "-";
@@ -240,6 +256,12 @@ window.addEventListener('load', () => {
 // Status page (home)
 String buildStatusPage() {
   return buildPageHeader("status") + R"HTML(
+<!-- Page Header -->
+<div class="section-header">
+  <h3>System Status</h3>
+  <p>Real-time wind data and system information</p>
+</div>
+
 <!-- Incoming & Outgoing Data Info -->
 <fieldset>
   <legend>Incoming & Outgoing Data</legend>
@@ -248,8 +270,16 @@ String buildStatusPage() {
     <span id=raw class="mono"></span>
   </div>
   <div class=row>
+    <label>Received Types (5s window):</label>
+    <span id=sentence_types style="font-family:monospace;"></span>
+  </div>
+  <div class=row>
     <label>Outgoing angle:</label>
     <span id=ang></span>°
+  </div>
+  <div class=row>
+    <label>Outgoing speed:</label>
+    <span id=spd></span> kn
   </div>
 </fieldset>
 
@@ -612,14 +642,14 @@ String buildDisplayPage(int displayNum) {
 </style>
 
 <!-- Basic Display Settings -->
-<fieldset>
+<fieldset id="display_basic_fields">
   <legend>)HTML" + displayTitle + R"HTML( Settings</legend>
   
   <div class=row>
     <label><input type=checkbox id=displayEnabled onchange="setDisplayEnabled()"> Enable )HTML" + displayTitle + R"HTML(</label>
   </div>
   
-  <div class=row>
+  <div class="row display_config_row">
     <label>Meter Type</label>
     <select id=displayType onchange="updateDisplayFields()">
       <option value="logicwind">Logic Wind</option>
@@ -628,7 +658,7 @@ String buildDisplayPage(int displayNum) {
     <span class="info-icon" data-tooltip="Logic Wind: Direction + speed display. Sumlog: Speed-only display">i</span>
   </div>
   
-  <div class=row>
+  <div class="row display_config_row">
     <label>NMEA Sentence</label>
     <select id=displaySentence>
       <option value="MWV">MWV (Wind Speed & Angle)</option>
@@ -657,12 +687,6 @@ String buildDisplayPage(int displayNum) {
     <input id=gotoAngle type=number min=0 max=359 step=1 placeholder="loading...">
     <button onclick="goAngle()" style="margin-left: 8px; background:#ffc107; border:none; padding:4px 8px; border-radius:3px;">Go to Angle</button>
     <span class="info-icon" data-tooltip="Test tool: Set specific wind direction for testing">i</span>
-  </div>
-  
-  <div class=row>
-    <label>Freeze NMEA Data</label>
-    <input type=checkbox id=freeze>
-    <span class="info-icon" data-tooltip="Stop processing new NMEA data (for testing)">i</span>
   </div>
   
 </fieldset>
@@ -700,33 +724,6 @@ String buildDisplayPage(int displayNum) {
   
 </fieldset>
 
-<!-- Pulse Filtering Settings (Sumlog only) -->
-<div class="section-header" id="filter_header" style="border-left-color: #ffc107;">
-  <h3 style="color: #e67e22;">Pulse Filtering Settings</h3>
-  <p>Reduce meter needle oscillation and improve stability</p>
-</div>
-<fieldset class="section-fieldset" id="filter_fields">
-  
-  <div class=row>
-    <label>Speed Filter Alpha</label>
-    <input id=speedFilterAlpha type=number min=0.1 max=0.9 step=0.01 placeholder="loading...">
-  <span class="info-icon" data-tooltip="How much the output is smoothed. Lower values: slower, more stable response (less jitter). Higher values: faster response, less smoothing.">i</span>
-  </div>
-  
-  <div class=row>
-    <label>Frequency Deadband (Hz)</label>
-    <input id=freqDeadband type=number min=0.1 max=5.0 step=0.1 placeholder="loading...">
-  <span class="info-icon" data-tooltip="Small changes in speed below this threshold are ignored. Prevents the display from moving due to noise or tiny fluctuations.">i</span>
-  </div>
-  
-  <div class=row>
-    <label>Max Step Percentage (%)</label>
-    <input id=maxStepPercent type=number min=5 max=50 step=1 placeholder="loading...">
-  <span class="info-icon" data-tooltip="Limits how much the output can change in a single update. Prevents sudden jumps and keeps the display movement natural.">i</span>
-  </div>
-  
-</fieldset>
-
 <div class=row style="margin-top: 20px;">
   <button onclick="saveDisplaySettings()" style="background:#28a745;color:white;padding:8px 16px;">Save )HTML" + displayTitle + R"HTML( Settings</button>
 </div>
@@ -738,7 +735,13 @@ function updateDisplayFields() {
   const enabled = document.getElementById('displayEnabled').checked;
   const type = document.getElementById('displayType').value;
   
-  // 1. WIND DIRECTION: Show only for Logic Wind type
+  // Basic config rows (Meter Type, NMEA Sentence): show only when enabled
+  const configRows = document.querySelectorAll('.display_config_row');
+  configRows.forEach(row => {
+    row.style.display = enabled ? '' : 'none';
+  });
+  
+  // 1. WIND DIRECTION: Show only for Logic Wind type when enabled
   const showDirection = (enabled && type === 'logicwind');
   document.getElementById('wind_direction_header').style.display = showDirection ? '' : 'none';
   document.getElementById('logicwind_direction_fields').style.display = showDirection ? '' : 'none';
@@ -746,11 +749,6 @@ function updateDisplayFields() {
   // 2. PULSE: Show always when enabled
   const showPulse = enabled;
   document.getElementById('pulse_fields').style.display = showPulse ? '' : 'none';
-  
-  // 3. FILTERING: Show only for Sumlog type
-  const showFilter = (enabled && type === 'sumlog');
-  document.getElementById('filter_header').style.display = showFilter ? '' : 'none';
-  document.getElementById('filter_fields').style.display = showFilter ? '' : 'none';
 }
 
 async function setDisplayEnabled(){ 
@@ -766,14 +764,10 @@ async function saveDisplaySettings(){
   const sentence = document.getElementById('displaySentence').value;
   const offsetDeg = document.getElementById('offsetDeg').value;
   const gotoAngle = document.getElementById('gotoAngle').value;
-  const freeze = document.getElementById('freeze').checked;
   const sumlogK = document.getElementById('sumlogK').value;
   const sumlogFmax = document.getElementById('sumlogFmax').value;
   const pulseDuty = document.getElementById('pulseDuty').value;
   const pulsePin = document.getElementById('pulsePin').value;
-  const speedFilterAlpha = document.getElementById('speedFilterAlpha').value;
-  const freqDeadband = document.getElementById('freqDeadband').value;
-  const maxStepPercent = document.getElementById('maxStepPercent').value;
   
   // Save all settings in one request
   const params = new URLSearchParams({
@@ -782,14 +776,10 @@ async function saveDisplaySettings(){
     sentence: sentence,
     offsetDeg: offsetDeg,
     gotoAngle: gotoAngle,
-    freeze: freeze?1:0,
     sumlogK: sumlogK,
     sumlogFmax: sumlogFmax,
     pulseDuty: pulseDuty,
-    pulsePin: pulsePin,
-    speedFilterAlpha: speedFilterAlpha,
-    freqDeadband: freqDeadband,
-    maxStepPercent: maxStepPercent
+    pulsePin: pulsePin
   });
   
   await fetch('/api/display?num=' + DISPLAY_NUM + '&action=save', {
@@ -818,14 +808,10 @@ async function loadDisplayValues() {
     document.getElementById('displaySentence').value = j.sentence || "MWV";
     document.getElementById('offsetDeg').value = j.offsetDeg || 0;
     document.getElementById('gotoAngle').value = j.gotoAngle || 0;
-    document.getElementById('freeze').checked = j.freeze || false;
     document.getElementById('sumlogK').value = j.sumlogK || 1.0;
     document.getElementById('sumlogFmax').value = j.sumlogFmax || 150;
     document.getElementById('pulseDuty').value = j.pulseDuty || 10;
     document.getElementById('pulsePin').value = j.pulsePin || (12 + DISPLAY_NUM * 2);
-    document.getElementById('speedFilterAlpha').value = j.speedFilterAlpha || 0.8;
-    document.getElementById('freqDeadband').value = j.freqDeadband || 0.5;
-    document.getElementById('maxStepPercent').value = j.maxStepPercent || 15.0;
     
     updateDisplayFields();
   } catch(e) {}

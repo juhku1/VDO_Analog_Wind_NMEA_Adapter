@@ -17,12 +17,6 @@ struct DisplayConfig {
   int pulseDuty;         // Pulse duty %
   int pulsePin;          // GPIO pin
   int gotoAngle;         // Manual angle
-  bool freeze;           // Freeze NMEA
-  
-  // Filter settings for stable pulse generation
-  float speedFilterAlpha; // Speed filter coefficient (0.1-0.9)
-  float freqDeadband;    // Frequency deadband (Hz)
-  float maxStepPercent;  // Max frequency step per update (%)
 };
 
 // Globaalit muuttujat jotka sijaitsevat wind_project.ino:ssa
@@ -39,6 +33,10 @@ extern int angleDeg;
 extern int lastAngleSent;
 extern String lastSentenceType;
 extern String lastSentenceRaw;
+extern bool hasMwvR;
+extern bool hasMwvT;
+extern bool hasVwr;
+extern bool hasVwt;
 extern bool freezeNMEA;
 extern uint8_t  nmeaProto;
 extern uint16_t nmeaPort;

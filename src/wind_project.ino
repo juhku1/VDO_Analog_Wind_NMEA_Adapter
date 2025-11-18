@@ -24,10 +24,6 @@ uint32_t lastFreq[3] = {0, 0, 0};  // Track last frequency to avoid unnecessary 
 
 float sumlog_speed_kn = 0.0;  // Nopeus solmuina
 
-// Speed filtering for stable pulse generation
-float speedFilter[3] = {0.0, 0.0, 0.0};  // Running average for each display
-// Filter settings are now per-display in DisplayConfig struct
-
 #define AP_SSID           "VDO-Cal"
 #define AP_PASS           "wind12345"
 uint8_t  nmeaProto = PROTO_HTTP;
@@ -67,6 +63,13 @@ String lastSentenceType = "-";
 String lastSentenceRaw  = "-";
 bool freezeNMEA = false;
 
+// NMEA sentence type tracking (5s window)
+bool hasMwvR = false;
+bool hasMwvT = false;
+bool hasVwr = false;
+bool hasVwt = false;
+uint32_t lastFlagReset = 0;
+
 char sta_ssid[33] = {0};
 char sta_pass[65] = {0};
 char ap_pass[65] = {0};
@@ -79,6 +82,16 @@ void saveNetworkConfig(const char* ssid, const char* pass);
 // FreeRTOS task for NMEA polling on Core 1
 void nmeaPollTaskFunc(void *pvParameters) {
   Serial.println("NMEA polling task started on Core 1");
+  
+  // Wait for WiFi to be ready before attempting TCP connection
+  // This prevents wasting time trying to connect before network is up
+  Serial.println("Waiting for WiFi to be ready...");
+  uint32_t wifiWaitStart = millis();
+  while ((WiFi.status() != WL_CONNECTED && WiFi.softAPgetStationNum() == 0) && 
+         millis() - wifiWaitStart < 30000) {
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+  Serial.println("WiFi ready, starting NMEA polling");
   
   // Set TCP client to non-blocking mode - won't freeze WiFi stack
   tcpClient.setTimeout(0);
@@ -115,10 +128,6 @@ void saveDisplayConfig(int displayNum = -1) {
       prefs.putInt((prefix + "pulseDuty").c_str(), displays[i].pulseDuty);
       prefs.putInt((prefix + "pulsePin").c_str(), displays[i].pulsePin);
       prefs.putInt((prefix + "gotoAngle").c_str(), displays[i].gotoAngle);
-      prefs.putBool((prefix + "freeze").c_str(), displays[i].freeze);
-      prefs.putFloat((prefix + "speedFilterAlpha").c_str(), displays[i].speedFilterAlpha);
-      prefs.putFloat((prefix + "freqDeadband").c_str(), displays[i].freqDeadband);
-      prefs.putFloat((prefix + "maxStepPercent").c_str(), displays[i].maxStepPercent);
     }
   } else if (displayNum >= 0 && displayNum < 3) {
     // Tallenna vain yksi display
@@ -132,10 +141,6 @@ void saveDisplayConfig(int displayNum = -1) {
     prefs.putInt((prefix + "pulseDuty").c_str(), displays[displayNum].pulseDuty);
     prefs.putInt((prefix + "pulsePin").c_str(), displays[displayNum].pulsePin);
     prefs.putInt((prefix + "gotoAngle").c_str(), displays[displayNum].gotoAngle);
-    prefs.putBool((prefix + "freeze").c_str(), displays[displayNum].freeze);
-    prefs.putFloat((prefix + "speedFilterAlpha").c_str(), displays[displayNum].speedFilterAlpha);
-    prefs.putFloat((prefix + "freqDeadband").c_str(), displays[displayNum].freqDeadband);
-    prefs.putFloat((prefix + "maxStepPercent").c_str(), displays[displayNum].maxStepPercent);
   }
   
   prefs.end();
@@ -156,10 +161,6 @@ void loadConfig(){
     displays[i].pulseDuty = prefs.getInt((prefix + "pulseDuty").c_str(), 10);
     displays[i].pulsePin = prefs.getInt((prefix + "pulsePin").c_str(), 12 + i * 2); // Default pins: 12, 14, 16
     displays[i].gotoAngle = prefs.getInt((prefix + "gotoAngle").c_str(), 0);
-    displays[i].freeze = prefs.getBool((prefix + "freeze").c_str(), false);
-    displays[i].speedFilterAlpha = prefs.getFloat((prefix + "speedFilterAlpha").c_str(), 0.3f);
-    displays[i].freqDeadband = prefs.getFloat((prefix + "freqDeadband").c_str(), 0.1f);
-    displays[i].maxStepPercent = prefs.getFloat((prefix + "maxStepPercent").c_str(), 50.0f);
   }
   
   offsetDeg        = prefs.getInt("offset", 0);
@@ -270,12 +271,20 @@ void updateDisplayPulse(int displayNum) {
   DisplayConfig &disp = displays[displayNum];
   
   if (disp.type == "sumlog") {
-    // Apply exponential moving average filter to speed using display-specific setting
-    speedFilter[displayNum] = speedFilter[displayNum] * disp.speedFilterAlpha + 
-                              sumlog_speed_kn * (1.0f - disp.speedFilterAlpha);
+    // Stop immediately if raw speed is 0 (propeller stopped) - don't wait for filter
+    if (sumlog_speed_kn < 0.01f && lastFreq[displayNum] != 0) {
+      ledcWrite(LEDC_CHANNELS[displayNum], 0);
+      lastFreq[displayNum] = 0;
+      Serial.printf("Display %d stopped (speed=0)\n", displayNum);
+      return;
+    }
     
-    // Sumlog pulse calculation with filtered speed
-    float freq = speedFilter[displayNum] * disp.sumlogK;
+    // Use raw speed directly without filtering - for testing
+    // speedFilter[displayNum] = speedFilter[displayNum] * disp.speedFilterAlpha + 
+    //                           sumlog_speed_kn * (1.0f - disp.speedFilterAlpha);
+    
+    // Sumlog pulse calculation with raw speed (no filtering)
+    float freq = sumlog_speed_kn * disp.sumlogK;
     if (freq > (float)disp.sumlogFmax) freq = (float)disp.sumlogFmax;
     
     if (freq < 0.01f) {
@@ -289,28 +298,8 @@ void updateDisplayPulse(int displayNum) {
       // Round frequency to reduce jitter
       uint32_t freqInt = (uint32_t)(freq + 0.5f);
       
-      // Apply deadband to prevent minor oscillations using display-specific setting
-      if (lastFreq[displayNum] > 0) {
-        float freqDiff = abs((int32_t)freqInt - (int32_t)lastFreq[displayNum]);
-        if (freqDiff < disp.freqDeadband) {
-          // Skip update if change is too small
-          return;
-        }
-      }
-      
-      // Only update if frequency actually changed significantly
+      // Only update if frequency actually changed
       if (freqInt != lastFreq[displayNum]) {
-        // Smooth frequency transition using display-specific step limit
-        uint32_t currentFreq = lastFreq[displayNum];
-        if (currentFreq > 0) {
-          int32_t diff = (int32_t)freqInt - (int32_t)currentFreq;
-          int32_t maxStep = max(1, (int32_t)(currentFreq * (disp.maxStepPercent / 100.0f)));
-          
-          if (abs(diff) > maxStep) {
-            freqInt = currentFreq + (diff > 0 ? maxStep : -maxStep);
-          }
-        }
-        
         // Vältä 0Hz joka aiheuttaa LEDC virheen
         if (freqInt == 0) {
           ledcWrite(LEDC_CHANNELS[displayNum], 0);
@@ -325,18 +314,25 @@ void updateDisplayPulse(int displayNum) {
           ledcWrite(LEDC_CHANNELS[displayNum], duty);
           
           lastFreq[displayNum] = freqInt;
-          Serial.printf("Display %d freq=%uHz (filtered=%.1f kn)\n", displayNum, freqInt, speedFilter[displayNum]);
+          Serial.printf("Display %d freq=%uHz (speed=%.1f kn)\n", displayNum, freqInt, sumlog_speed_kn);
         }
       }
     }
   } else if (disp.type == "logicwind") {
-    // Logic Wind also needs speed pulse generation (same as Sumlog)
-    // Apply exponential moving average filter to speed using display-specific setting
-    speedFilter[displayNum] = speedFilter[displayNum] * disp.speedFilterAlpha + 
-                              sumlog_speed_kn * (1.0f - disp.speedFilterAlpha);
+    // Stop immediately if raw speed is 0 (propeller stopped) - don't wait for filter
+    if (sumlog_speed_kn < 0.01f && lastFreq[displayNum] != 0) {
+      ledcWrite(LEDC_CHANNELS[displayNum], 0);
+      lastFreq[displayNum] = 0;
+      Serial.printf("Display %d Logic Wind stopped (speed=0)\n", displayNum);
+      return;
+    }
     
-    // Logic Wind pulse calculation with filtered speed
-    float freq = speedFilter[displayNum] * disp.sumlogK;
+    // Use raw speed directly without filtering - for testing
+    // speedFilter[displayNum] = speedFilter[displayNum] * disp.speedFilterAlpha + 
+    //                           sumlog_speed_kn * (1.0f - disp.speedFilterAlpha);
+    
+    // Logic Wind pulse calculation with raw speed (no filtering)
+    float freq = sumlog_speed_kn * disp.sumlogK;
     if (freq > (float)disp.sumlogFmax) freq = (float)disp.sumlogFmax;
     
     if (freq < 0.01f) {
@@ -350,28 +346,8 @@ void updateDisplayPulse(int displayNum) {
       // Round frequency to reduce jitter
       uint32_t freqInt = (uint32_t)(freq + 0.5f);
       
-      // Apply deadband to prevent minor oscillations using display-specific setting
-      if (lastFreq[displayNum] > 0) {
-        float freqDiff = abs((int32_t)freqInt - (int32_t)lastFreq[displayNum]);
-        if (freqDiff < disp.freqDeadband) {
-          // Skip update if change is too small
-          return;
-        }
-      }
-      
-      // Only update if frequency actually changed significantly
+      // Only update if frequency actually changed
       if (freqInt != lastFreq[displayNum]) {
-        // Smooth frequency transition using display-specific step limit
-        uint32_t currentFreq = lastFreq[displayNum];
-        if (currentFreq > 0) {
-          int32_t diff = (int32_t)freqInt - (int32_t)currentFreq;
-          int32_t maxStep = max(1, (int32_t)(currentFreq * (disp.maxStepPercent / 100.0f)));
-          
-          if (abs(diff) > maxStep) {
-            freqInt = currentFreq + (diff > 0 ? maxStep : -maxStep);
-          }
-        }
-        
         // Vältä 0Hz joka aiheuttaa LEDC virheen
         if (freqInt == 0) {
           ledcWrite(LEDC_CHANNELS[displayNum], 0);
@@ -386,7 +362,7 @@ void updateDisplayPulse(int displayNum) {
           ledcWrite(LEDC_CHANNELS[displayNum], duty);
           
           lastFreq[displayNum] = freqInt;
-          Serial.printf("Display %d Logic Wind freq=%uHz (filtered=%.1f kn)\n", displayNum, freqInt, speedFilter[displayNum]);
+          Serial.printf("Display %d Logic Wind freq=%uHz (speed=%.1f kn)\n", displayNum, freqInt, sumlog_speed_kn);
         }
       }
     }
@@ -451,6 +427,8 @@ bool parseMWV(char* line){
     }
   }
   lastSentenceType = String("MWV(")+ref+")";
+  if(ref=='R') hasMwvR = true;
+  else if(ref=='T') hasMwvT = true;
   return true;
 }
 bool parseVWR(char* line){
@@ -470,6 +448,7 @@ bool parseVWR(char* line){
     }
   }
   lastSentenceType = "VWR";
+  hasVwr = true;
   return true;
 }
 bool parseVWT(char* line){
@@ -489,6 +468,7 @@ bool parseVWT(char* line){
     }
   }
   lastSentenceType = "VWT";
+  hasVwt = true;
   return true;
 }
 bool parseNMEALine(char* line){
@@ -527,6 +507,15 @@ void ensureTCPConnected(WiFiClient& client){
 
 void pollTCP(WiFiClient& client){
   if(!client.connected()) return;
+
+  // Reset sentence flags every 5 seconds
+  if(millis() - lastFlagReset > 5000) {
+    hasMwvR = false;
+    hasMwvT = false;
+    hasVwr = false;
+    hasVwt = false;
+    lastFlagReset = millis();
+  }
 
   // Non-blocking: read only one chunk, not all available
   if(client.available()) {
