@@ -6,10 +6,10 @@ from tkinter import messagebox
 
 # ============================ ASETUKSET ============================
 # Oletusasetukset - voi muuttaa Settings-ikkunasta
-ESP_IP = "192.168.68.124"  # Kohde ESP32:n osoite
+ESP_IP = "192.168.68.119"  # Kohde ESP32:n osoite
 ESP_PORT = 10110           # Kohde portti
 LOCAL_IP = "192.168.68.126"  # Oma IP (binding varten)
-USE_TCP = False            # True = TCP, False = UDP
+USE_TCP = False            # True = TCP, False = UDP (for independent testing)
 USE_BROADCAST = True       # True = Hybrid (broadcast + unicast), False = unicast only
 BROADCAST_IP = "255.255.255.255"  # Global broadcast address
 
@@ -26,6 +26,7 @@ FONT_LBL  = ("Arial", 15, "bold")
 
 SPEED_MIN = 0.0
 SPEED_MAX = 70.0
+
 SPEED_INIT = 10.5
 SPEED_STEP_FINE = 0.1
 SPEED_STEP_COARSE = 1.0

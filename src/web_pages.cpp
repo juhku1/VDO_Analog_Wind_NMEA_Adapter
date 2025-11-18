@@ -199,7 +199,15 @@ async function refresh(){
       apStatusEl.style.color = "#28a745";
     }
     
-    if (nmeaProtocolEl) nmeaProtocolEl.textContent = j.proto === "TCP" ? "TCP (client)" : "UDP (listening)";
+    if (nmeaProtocolEl) {
+      if (j.proto === "TCP") {
+        nmeaProtocolEl.textContent = "TCP (client)";
+      } else if (j.proto === "HTTP") {
+        nmeaProtocolEl.textContent = "HTTP (client)";
+      } else {
+        nmeaProtocolEl.textContent = "UDP (listening)";
+      }
+    }
     if (nmeaPortEl) nmeaPortEl.textContent = j.port || "10110";
     if (nmeaHostEl) nmeaHostEl.textContent = j.host || "192.168.4.2";
     if (nmeaStatusEl) {
@@ -407,8 +415,9 @@ String buildNetworkPage() {
     <select id=proto>
       <option value="udp">UDP (listen for broadcasts)</option>
       <option value="tcp">TCP (connect to server)</option>
+      <option value="http">HTTP (poll sensor data)</option>
     </select>
-    <span class="info-icon" data-tooltip="UDP: Listen for broadcast data. TCP: Connect to specific server">i</span>
+    <span class="info-icon" data-tooltip="UDP: Listen for broadcast data. TCP: Connect to specific server. HTTP: Poll NMEA data from HTTP sensor">i</span>
   </div>
   <div class=kv>
     <label>Host Address</label>

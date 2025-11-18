@@ -4,7 +4,7 @@
 #include <WiFi.h>
 
 // Enum protokollille
-enum { PROTO_UDP = 0, PROTO_TCP = 1 };
+enum { PROTO_UDP = 0, PROTO_TCP = 1, PROTO_HTTP = 2 };
 
 // Display configuration structure
 struct DisplayConfig {
@@ -43,7 +43,7 @@ extern bool freezeNMEA;
 extern uint8_t  nmeaProto;
 extern uint16_t nmeaPort;
 extern String   nmeaHost;
-extern WiFiClient tcpClient;
+extern volatile bool tcpConnected;  // TCP connection state (set by Core 1, read by Core 0)
 extern char sta_ssid[];
 extern char sta_pass[];
 extern char ap_pass[];
@@ -63,7 +63,6 @@ void updateAllDisplayPulses();
 void setupWebUI(WebServer& server);
 void bindTransport();
 void connectSTA();
-void ensureTCPConnected();
 void setOutputsDeg(int displayNum, int deg);
 
 // Page builders (web_pages.cpp)

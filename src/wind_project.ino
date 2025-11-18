@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <WiFi.h>
-#include <WiFiUdp.h>
 #include <WebServer.h>
 #include <Preferences.h>
 #include "DFRobot_GP8403.h"
@@ -25,25 +24,30 @@ uint32_t lastFreq[3] = {0, 0, 0};  // Track last frequency to avoid unnecessary 
 
 float sumlog_speed_kn = 0.0;  // Nopeus solmuina
 
-// Smooth frequency transition timer
-hw_timer_t * smoothTimer = NULL;
-volatile bool needSmoothUpdate = false;
-
 // Speed filtering for stable pulse generation
 float speedFilter[3] = {0.0, 0.0, 0.0};  // Running average for each display
 // Filter settings are now per-display in DisplayConfig struct
 
 #define AP_SSID           "VDO-Cal"
 #define AP_PASS           "wind12345"
-uint8_t  nmeaProto = PROTO_UDP;
-uint16_t nmeaPort  = 10110;
-String   nmeaHost  = "192.168.4.2";
+uint8_t  nmeaProto = PROTO_HTTP;
+uint16_t nmeaPort  = 80;
+String   nmeaHost  = "192.168.4.1";
 
-WiFiUDP udp;
+// Persistent TCP client for real-time Yachta wind data
 WiFiClient tcpClient;
+uint32_t lastTcpAttempt = 0;
+
+// TCP Connection state (for web display only - set by Core 1)
+volatile bool tcpConnected = false;
+
 char netBuf[1472];
-uint32_t nextTcpAttemptMs = 0;
+char nmeaLineBuf[256] = {0};  // Buffer for accumulating incomplete lines
+size_t nmeaLineBufLen = 0;
 uint32_t lastNmeaDataMs = 0;  // Timestamp of last received NMEA data
+
+// FreeRTOS task for NMEA polling on Core 1
+TaskHandle_t nmeaPollTask = NULL;
 
 #define SDA_PIN   21
 #define SCL_PIN   22
@@ -71,6 +75,28 @@ WebServer server(80);
 
 /* ========= Funktioiden prototyypit ========= */
 void saveNetworkConfig(const char* ssid, const char* pass);
+
+// FreeRTOS task for NMEA polling on Core 1
+void nmeaPollTaskFunc(void *pvParameters) {
+  Serial.println("NMEA polling task started on Core 1");
+  
+  // Set TCP client to non-blocking mode - won't freeze WiFi stack
+  tcpClient.setTimeout(0);
+  
+  while(1) {
+    if(!freezeNMEA) {
+      // TCP Client mode - use persistent global tcpClient with non-blocking mode
+      ensureTCPConnected(tcpClient);
+      if(tcpClient.connected()) {
+        pollTCP(tcpClient);
+        tcpConnected = true;
+      } else {
+        tcpConnected = false;
+      }
+    }
+    vTaskDelay(pdMS_TO_TICKS(5));  // 5ms cycle = 200Hz = responsive for wind direction
+  }
+}
 
 /* ========= Asetusten tallennus ========= */
 void saveDisplayConfig(int displayNum = -1) {
@@ -131,49 +157,35 @@ void loadConfig(){
     displays[i].pulsePin = prefs.getInt((prefix + "pulsePin").c_str(), 12 + i * 2); // Default pins: 12, 14, 16
     displays[i].gotoAngle = prefs.getInt((prefix + "gotoAngle").c_str(), 0);
     displays[i].freeze = prefs.getBool((prefix + "freeze").c_str(), false);
-    displays[i].speedFilterAlpha = prefs.getFloat((prefix + "speedFilterAlpha").c_str(), 0.8f);
-    displays[i].freqDeadband = prefs.getFloat((prefix + "freqDeadband").c_str(), 0.5f);
-    displays[i].maxStepPercent = prefs.getFloat((prefix + "maxStepPercent").c_str(), 15.0f);
+    displays[i].speedFilterAlpha = prefs.getFloat((prefix + "speedFilterAlpha").c_str(), 0.3f);
+    displays[i].freqDeadband = prefs.getFloat((prefix + "freqDeadband").c_str(), 0.1f);
+    displays[i].maxStepPercent = prefs.getFloat((prefix + "maxStepPercent").c_str(), 50.0f);
   }
   
   offsetDeg        = prefs.getInt("offset", 0);
-  nmeaPort         = (uint16_t)prefs.getUShort("udp_port", 10110);
-  nmeaProto        = (uint8_t)prefs.getUChar("proto", PROTO_UDP);
-  nmeaHost         = prefs.getString("host", "0.0.0.0");
-  String s         = prefs.getString("sta_ssid", "");  // Ei defaulttia
+  nmeaPort         = (uint16_t)prefs.getUShort("udp_port", 80);
+  nmeaProto        = (uint8_t)prefs.getUChar("proto", PROTO_HTTP);
+  nmeaHost         = prefs.getString("host", "0.0.0.0");  // Default to server mode
+  
+  // Use TCP stream for real-time NMEA data (now with non-blocking mode)
+  // Non-blocking TCP won't freeze WiFi stack anymore
+  nmeaProto = PROTO_TCP;
+  nmeaPort = 6666;
+  nmeaHost = "192.168.68.145";  // Yachta sensor IP (TCP stream endpoint)
+  
+  String s         = prefs.getString("sta_ssid", "");
+  if (s.length() == 0) s = "Kontu";  // Connect to main network instead of Yachta AP
   String ap        = prefs.getString("ap_pass", AP_PASS);
   
-  // Lataa SSID-kohtainen salasana vain jos SSID on määritelty
-  String p = "";
-  if (s.length() > 0) {
-    String passKey = "pass_" + s;  // esim. "pass_openplotter"
-    p = prefs.getString(passKey.c_str(), "");
-    
-    if (p.length() == 0) {
-      // Jos SSID-kohtaista salasanaa ei löydy, kokeile vanhaa tapaa
-      p = prefs.getString("sta_pass", "");
-      if (p.length() > 0) {
-        Serial.printf("Using legacy password for SSID '%s'\n", s.c_str());
-      } else {
-        Serial.printf("No password found for SSID '%s'\n", s.c_str());
-      }
-    }
-  } else {
-    Serial.println("No STA SSID configured, AP-only mode");
-  }
+  // Set YachtaServer password
+  String p = "8765432A1";  // YachtaServer password
   
   s.toCharArray(sta_ssid, sizeof(sta_ssid));
   p.toCharArray(sta_pass, sizeof(sta_pass));
   ap.toCharArray(ap_pass, sizeof(ap_pass));
   prefs.end();
   
-  // Debug the actual loaded values
-  Serial.printf("Debug - Raw strings: STA_SSID='%s'(%d), STA_PASS='%s'(%d), AP_PASS='%s'(%d)\n", 
-                s.c_str(), s.length(), p.c_str(), p.length(), ap.c_str(), ap.length());
-  Serial.printf("Loaded STA SSID='%s', STA PASS='%s', AP PASS='%s'\n", sta_ssid, sta_pass, ap_pass);
-  Serial.printf("Network: Proto=%s, Host='%s', Port=%u\n", 
-                (nmeaProto == PROTO_UDP) ? "UDP" : "TCP", 
-                nmeaHost.c_str(), nmeaPort);
+  Serial.printf("Network: Proto=TCP, Host='%s', Port=%u\n", nmeaHost.c_str(), nmeaPort);
 }
 
 void saveNetworkConfig(const char* ssid, const char* pass) {
@@ -215,6 +227,11 @@ void setOutputsDeg(int displayNum, int deg){
   int cos_mV = mvClamp(VCEN + (int)lroundf(amp * c));
   dac.setDACOutVoltage(sin_mV, CH_SIN);
   dac.setDACOutVoltage(cos_mV, CH_COS);
+  
+  // Track direction changes
+  if (adj != lastAngleSent) {
+    Serial.printf("Direction: %d° (sin:%dmV cos:%dmV)\n", adj, sin_mV, cos_mV);
+  }
   lastAngleSent = adj;
 }
 
@@ -229,7 +246,7 @@ void startDisplay(int displayNum) {
     ledcActive[displayNum] = true;
     lastFreq[displayNum] = 0; // Reset frequency tracking
     
-    Serial.println("Display " + String(displayNum) + " LEDC käynnistetty, timer=" + String(LEDC_TIMERS[displayNum]));
+    Serial.printf("Display %d LEDC started, timer=%d\n", displayNum, LEDC_TIMERS[displayNum]);
     updateDisplayPulse(displayNum);
   }
 }
@@ -243,7 +260,7 @@ void stopDisplay(int displayNum) {
     ledcActive[displayNum] = false;
     lastFreq[displayNum] = 0; // Reset frequency tracking
     pinMode(displays[displayNum].pulsePin, INPUT);
-    Serial.println("Display " + String(displayNum) + " LEDC pysäytetty");
+    Serial.printf("Display %d LEDC stopped\n", displayNum);
   }
 }
 
@@ -266,7 +283,7 @@ void updateDisplayPulse(int displayNum) {
       if (lastFreq[displayNum] != 0) {
         ledcWrite(LEDC_CHANNELS[displayNum], 0);
         lastFreq[displayNum] = 0;
-        Serial.println("Display " + String(displayNum) + " stopped (freq too low)");
+        Serial.printf("Display %d stopped (freq too low)\n", displayNum);
       }
     } else {
       // Round frequency to reduce jitter
@@ -298,7 +315,7 @@ void updateDisplayPulse(int displayNum) {
         if (freqInt == 0) {
           ledcWrite(LEDC_CHANNELS[displayNum], 0);
           lastFreq[displayNum] = 0;
-          Serial.println("Display " + String(displayNum) + " stopped (0Hz avoided)");
+          Serial.printf("Display %d stopped (0Hz avoided)\n", displayNum);
         } else {
           // Calculate duty cycle (0-1023 for 10-bit resolution)
           uint32_t duty = (uint32_t)((1023 * disp.pulseDuty) / 100);
@@ -308,7 +325,7 @@ void updateDisplayPulse(int displayNum) {
           ledcWrite(LEDC_CHANNELS[displayNum], duty);
           
           lastFreq[displayNum] = freqInt;
-          Serial.println("Display " + String(displayNum) + " freq=" + String(freqInt) + "Hz (filtered=" + String(speedFilter[displayNum], 1) + "kn)");
+          Serial.printf("Display %d freq=%uHz (filtered=%.1f kn)\n", displayNum, freqInt, speedFilter[displayNum]);
         }
       }
     }
@@ -327,7 +344,7 @@ void updateDisplayPulse(int displayNum) {
       if (lastFreq[displayNum] != 0) {
         ledcWrite(LEDC_CHANNELS[displayNum], 0);
         lastFreq[displayNum] = 0;
-        Serial.println("Display " + String(displayNum) + " stopped (freq too low)");
+        Serial.printf("Display %d stopped (freq too low)\n", displayNum);
       }
     } else {
       // Round frequency to reduce jitter
@@ -359,7 +376,7 @@ void updateDisplayPulse(int displayNum) {
         if (freqInt == 0) {
           ledcWrite(LEDC_CHANNELS[displayNum], 0);
           lastFreq[displayNum] = 0;
-          Serial.println("Display " + String(displayNum) + " Logic Wind stopped (0Hz avoided)");
+          Serial.printf("Display %d Logic Wind stopped (0Hz avoided)\n", displayNum);
         } else {
           // Calculate duty cycle (0-1023 for 10-bit resolution)
           uint32_t duty = (uint32_t)((1023 * disp.pulseDuty) / 100);
@@ -369,7 +386,7 @@ void updateDisplayPulse(int displayNum) {
           ledcWrite(LEDC_CHANNELS[displayNum], duty);
           
           lastFreq[displayNum] = freqInt;
-          Serial.println("Display " + String(displayNum) + " Logic Wind freq=" + String(freqInt) + "Hz (filtered=" + String(speedFilter[displayNum], 1) + "kn)");
+          Serial.printf("Display %d Logic Wind freq=%uHz (filtered=%.1f kn)\n", displayNum, freqInt, speedFilter[displayNum]);
         }
       }
     }
@@ -380,11 +397,6 @@ void updateDisplayPulse(int displayNum) {
       lastFreq[displayNum] = 0;
     }
   }
-}
-
-// Timer interrupt for smooth frequency transitions
-void IRAM_ATTR onSmoothTimer() {
-  needSmoothUpdate = true;
 }
 
 // Update all active displays (immediate response for accurate measurement)
@@ -415,7 +427,11 @@ int splitCSV(char* line, char* fields[], int maxf){
 bool hasFormatter(const char* s, const char* fmt3){
   const char* p=s; if(*p=='$') p++;
   if(strlen(p)<5) return false;
-  return (p[2]==fmt3[0] && p[3]==fmt3[1] && p[4]==fmt3[2]);
+  // Check for formatter - can be at position 0-2 or 2-4 (for talkers like II, WI, etc)
+  // Standard: $IIMWV (pos 2-4) or Yachta: $WIMWV (pos 3-5)
+  if (p[2]==fmt3[0] && p[3]==fmt3[1] && p[4]==fmt3[2]) return true;
+  if (strlen(p)>=6 && p[3]==fmt3[0] && p[4]==fmt3[1] && p[5]==fmt3[2]) return true;
+  return false;
 }
 
 bool parseMWV(char* line){
@@ -489,84 +505,63 @@ bool parseNMEALine(char* line){
 }
 
 /* ========= UDP/TCP BIND & POLL ========= */
-void bindUDP(){
-  udp.stop();
-  if(udp.begin(nmeaPort)){
-    Serial.printf("UDP listening on *:%u\n", nmeaPort);
-  } else {
-    Serial.println("UDP begin failed!");
-  }
-}
-void ensureTCPConnected(){
-  if (tcpClient.connected()) return;
+void ensureTCPConnected(WiFiClient& client){
+  if (client.connected()) return;
   uint32_t now = millis();
-  if (now < nextTcpAttemptMs) return;
-  nextTcpAttemptMs = now + 3000;
-  Serial.printf("TCP connect to %s:%u ...\n", nmeaHost.c_str(), nmeaPort);
-  tcpClient.stop();
-  tcpClient.setTimeout(1000);
-  if (tcpClient.connect(nmeaHost.c_str(), nmeaPort)) {
-    tcpClient.setNoDelay(true);
-    Serial.println("TCP connected.");
+  if (now < lastTcpAttempt) return;  // Don't retry too often
+  lastTcpAttempt = now + 3000;  // Wait 3 seconds between connection attempts
+  
+  Serial.printf("TCP connect to %s:%u...\n", nmeaHost.c_str(), nmeaPort);
+  client.stop();
+  client.setTimeout(1000);  // 1 second timeout for connect
+  
+  // Try to connect with short timeout (will complete or timeout quickly)
+  if(client.connect(nmeaHost.c_str(), nmeaPort)) {
+    Serial.println("TCP connected! Setting non-blocking mode...");
+    client.setTimeout(0);  // Now switch to non-blocking for reading
   } else {
-    Serial.println("TCP connect failed.");
+    Serial.println("TCP connect failed");
   }
 }
 
-void pollUDP(){
-  int pktsz = udp.parsePacket();
-  if(pktsz<=0) return;
-  int n = udp.read(netBuf, sizeof(netBuf)-1);
-  if(n<=0) return;
-  netBuf[n]=0;
-  char* s = netBuf;
-  while(s && *s){
-    char* e = strpbrk(s, "\r\n");
-    if(e) *e=0;
-    if(*s){
-      lastSentenceRaw = String(s);
-      lastNmeaDataMs = millis();  // Mark data received
-  if(parseNMEALine(s)) setOutputsDeg(0, angleDeg); // TODO: käytä oikeaa displayNum:ia
-    }
-    if(!e) break;
-    s = e+1;
-  }
-}
 
-void pollTCP(){
-  ensureTCPConnected();
-  if(!tcpClient.connected()) return;
+void pollTCP(WiFiClient& client){
+  if(!client.connected()) return;
 
-  while(tcpClient.available()){
-    size_t n = tcpClient.readBytes(netBuf, sizeof(netBuf)-1);
-    if(n==0) break;
-    netBuf[n]=0;
-    char* s = netBuf;
-    while(s && *s){
-      char* e = strpbrk(s, "\r\n");
-      if(e) *e=0;
-      if(*s){
-        lastSentenceRaw = String(s);
-        lastNmeaDataMs = millis();  // Mark data received
-  if(parseNMEALine(s)) setOutputsDeg(0, angleDeg); // TODO: käytä oikeaa displayNum:ia
+  // Non-blocking: read only one chunk, not all available
+  if(client.available()) {
+    // Read one chunk
+    size_t n = client.readBytes(netBuf, sizeof(netBuf)-1);
+    if(n > 0) {
+      netBuf[n] = 0;
+      
+      // Process chunk: accumulate into line buffer
+      for(size_t i = 0; i < n; i++) {
+        char c = netBuf[i];
+        
+        if(c == '\r' || c == '\n') {
+          // End of line found
+          if(nmeaLineBufLen > 0) {
+            nmeaLineBuf[nmeaLineBufLen] = 0;
+            lastSentenceRaw = String(nmeaLineBuf);
+            lastNmeaDataMs = millis();
+            if(parseNMEALine(nmeaLineBuf)) {
+              setOutputsDeg(0, angleDeg);
+            }
+            nmeaLineBufLen = 0;
+          }
+        } else if(nmeaLineBufLen < sizeof(nmeaLineBuf)-1) {
+          // Accumulate character
+          nmeaLineBuf[nmeaLineBufLen++] = c;
+        }
       }
-      if(!e) break;
-      s = e+1;
     }
   }
 }
 
 void bindTransport(){
-  Serial.printf("bindTransport: Using %s protocol on port %u\n", 
-                (nmeaProto == PROTO_UDP) ? "UDP" : "TCP", nmeaPort);
-  if(nmeaProto == PROTO_UDP){
-    bindUDP();
-    tcpClient.stop();
-  } else {
-    udp.stop();
-    nextTcpAttemptMs = 0;
-    ensureTCPConnected();
-  }
+  Serial.printf("TCP stream: %s:%u\n", nmeaHost.c_str(), nmeaPort);
+  lastTcpAttempt = 0;  // Attempt connection immediately
 }
 
 /* ========= STA-yhteys ========= */
@@ -583,7 +578,7 @@ void connectSTA(){
   uint32_t t0=millis();
   while (WiFi.status()!=WL_CONNECTED && millis()-t0<20000){
     Serial.print(".");
-    delay(500);
+    delay(250);
   }
   Serial.println();
   if(WiFi.status()==WL_CONNECTED){
@@ -599,16 +594,28 @@ void setup() {
 
   loadConfig();
 
-  // Setup smooth transition timer (50ms intervals)
-  smoothTimer = timerBegin(0, 80, true);  // Timer 0, prescaler 80 (1MHz), count up
-  timerAttachInterrupt(smoothTimer, &onSmoothTimer, true);
-  timerAlarmWrite(smoothTimer, 50000, true);  // 50ms = 50000 microseconds
-  timerAlarmEnable(smoothTimer);
-
   Wire.begin(SDA_PIN, SCL_PIN, I2C_HZ);
-  while (dac.begin() != 0) { Serial.println("GP8403 init error"); delay(800); }
-  dac.setDACOutRange(dac.eOutputRange10V);
-  setOutputsDeg(0, angleDeg); // TODO: käytä oikeaa displayNum:ia
+  
+  // Try DAC init with timeout - don't get stuck forever if DAC missing
+  int dacTries = 0;
+  bool dacReady = false;
+  while (dac.begin() != 0 && dacTries < 5) {
+    Serial.println("GP8403 init error");
+    delay(200);
+    dacTries++;
+  }
+  
+  if (dacTries >= 5) {
+    Serial.println("GP8403 init FAILED - continuing without DAC");
+  } else {
+    dac.setDACOutRange(dac.eOutputRange10V);
+    dacReady = true;
+    Serial.println("GP8403 init OK");
+  }
+  
+  if (dacReady) {
+    setOutputsDeg(0, angleDeg); // TODO: käytä oikeaa displayNum:ia
+  }
 
   // Initialize enabled displays
   for (int i = 0; i < 3; i++) {
@@ -634,23 +641,50 @@ void setup() {
   bindTransport();
 
   setupWebUI(server);
+  
+  // Create NMEA polling task on Core 1 BEFORE starting web server
+  xTaskCreatePinnedToCore(
+    nmeaPollTaskFunc,      // Task function
+    "NMEA_Poll",           // Task name
+    4096,                  // Stack size (bytes)
+    NULL,                  // Parameters
+    2,                     // Priority (higher than loop)
+    &nmeaPollTask,         // Task handle
+    1                      // Core 1 (0=Core 0, 1=Core 1)
+  );
+  Serial.println("NMEA polling task created");
+  
+  // Simple toggle endpoints for NMEA processing
+  server.on("/unfreeze", HTTP_GET, [](){
+    freezeNMEA = false;
+    server.send(200, "text/plain", "NMEA processing resumed");
+  });
+  
+  // Add a simple test route to debug web server
+  server.on("/test", HTTP_GET, [](){
+    Serial.println("DEBUG: /test route called");
+    server.send(200, "text/plain", "ESP32 Web Server Working!");
+  });
+  
   server.begin();
-
+  Serial.println("Web server started on port 80");
+  
   Serial.println("Ready.");
 }
 
 void loop() {
+  // Core 0: Dedicated to web server (NMEA polling now runs on Core 1)
+  static uint32_t lastDebug = 0;
+  uint32_t now = millis();
+  
+  // Heartbeat every 10 seconds
+  if (now - lastDebug > 10000) {
+    Serial.printf("Loop: %u ms\n", now);
+    lastDebug = now;
+  }
+  
   server.handleClient();
-  if(!freezeNMEA){
-    if(nmeaProto==PROTO_UDP) pollUDP();
-    else                    pollTCP();
-  }
   
-  // Handle smooth frequency transitions
-  if (needSmoothUpdate) {
-    needSmoothUpdate = false;
-    updateAllDisplayPulses();
-  }
-  
-  // Pulssit tuotetaan LEDC-hardwarella
+  // Small delay to prevent watchdog and allow other tasks
+  delay(1);
 }
