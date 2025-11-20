@@ -151,7 +151,7 @@ static void handleGoto(){
   }
   g_srv->send(200,"text/plain",String("angle=")+angleDeg);
 }
-static void handleSaveCfg(){ // POST: ssid, pass, port, proto, host
+static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, conn_mode, p1_name, p1_proto, p1_host, p1_port, p2_name, p2_proto, p2_host, p2_port, wifi_mode, w1_ssid, w1_pass, w2_ssid, w2_pass
   if (g_srv->method() != HTTP_POST){
     g_srv->send(405, "text/plain", "Method Not Allowed");
     return;
@@ -159,44 +159,82 @@ static void handleSaveCfg(){ // POST: ssid, pass, port, proto, host
   String ssid = g_srv->arg("ssid");
   String pass = g_srv->arg("pass");
   String ap_pass = g_srv->arg("ap_pass");
-  String portStr = g_srv->arg("port");
-  String protoStr= g_srv->arg("proto");
-  String hostStr = g_srv->arg("host");
+  String connModeStr = g_srv->arg("conn_mode");
+  String wifiModeStr = g_srv->arg("wifi_mode");
 
-  uint16_t newPort = nmeaPort;
-  if (portStr.length()) {
-    long p = portStr.toInt();
-    if (p>=1 && p<=65535) newPort = (uint16_t)p;
-  }
-  uint8_t newProto = (protoStr.equalsIgnoreCase("tcp") ? PROTO_TCP : 
-                      protoStr.equalsIgnoreCase("http") ? PROTO_HTTP : PROTO_UDP);
-  if (hostStr.length()==0) hostStr = nmeaHost; // jätä ennalleen jos tyhjä
-
-  // talleen NVS:ään käyttäen uutta SSID-kohtaista järjestelmää
+  // WiFi settings
   if (ssid.length() > 0 && pass.length() >= 0) {
     saveNetworkConfig(ssid.c_str(), pass.c_str());
   }
   
-  // Tallenna muut asetukset
+  // Connection profiles
+  uint8_t connMode = connModeStr.toInt();
+  if (connMode > 1) connMode = 0;
+
+  // WiFi profiles
+  uint8_t wifiMode = wifiModeStr.toInt();
+  if (wifiMode > 1) wifiMode = 0;
+
+  // Profile 1
+  String p1_name = g_srv->arg("p1_name");
+  String p1_proto = g_srv->arg("p1_proto");
+  String p1_host = g_srv->arg("p1_host");
+  String p1_port = g_srv->arg("p1_port");
+
+  // Profile 2
+  String p2_name = g_srv->arg("p2_name");
+  String p2_proto = g_srv->arg("p2_proto");
+  String p2_host = g_srv->arg("p2_host");
+  String p2_port = g_srv->arg("p2_port");
+
+  // WiFi Profile 1
+  String w1_ssid = g_srv->arg("w1_ssid");
+  String w1_pass = g_srv->arg("w1_pass");
+
+  // WiFi Profile 2
+  String w2_ssid = g_srv->arg("w2_ssid");
+  String w2_pass = g_srv->arg("w2_pass");
+
+  // Save to NVS
   prefs.begin("cfg", false);
+  
   if (ap_pass.length() > 7) prefs.putString("ap_pass", ap_pass);
-  prefs.putUShort("udp_port", newPort);
-  prefs.putUChar("proto",    newProto);
-  prefs.putString("host",    hostStr);
+  prefs.putUChar("conn_mode", connMode);
+  prefs.putUChar("wifi_mode", wifiMode);
+  
+  // Profile 1
+  if (p1_name.length() > 0) prefs.putString("p1_name", p1_name);
+  if (p1_proto.length() > 0) {
+    uint8_t proto = (p1_proto.equalsIgnoreCase("tcp") ? PROTO_TCP : 
+                     p1_proto.equalsIgnoreCase("http") ? PROTO_HTTP : PROTO_UDP);
+    prefs.putUChar("p1_proto", proto);
+  }
+  if (p1_host.length() > 0) prefs.putString("p1_host", p1_host);
+  if (p1_port.length() > 0) prefs.putUShort("p1_port", (uint16_t)p1_port.toInt());
+
+  // Profile 2
+  if (p2_name.length() > 0) prefs.putString("p2_name", p2_name);
+  if (p2_proto.length() > 0) {
+    uint8_t proto = (p2_proto.equalsIgnoreCase("tcp") ? PROTO_TCP : 
+                     p2_proto.equalsIgnoreCase("http") ? PROTO_HTTP : PROTO_UDP);
+    prefs.putUChar("p2_proto", proto);
+  }
+  if (p2_host.length() > 0) prefs.putString("p2_host", p2_host);
+  if (p2_port.length() > 0) prefs.putUShort("p2_port", (uint16_t)p2_port.toInt());
+
+  // WiFi Profile 1
+  if (w1_ssid.length() > 0) prefs.putString("w1_ssid", w1_ssid);
+  if (w1_pass.length() > 0) prefs.putString("w1_pass", w1_pass);
+
+  // WiFi Profile 2
+  if (w2_ssid.length() > 0) prefs.putString("w2_ssid", w2_ssid);
+  if (w2_pass.length() > 0) prefs.putString("w2_pass", w2_pass);
+
   prefs.end();
 
-  // päivitä RAM-kopiot
-  if (ssid.length()) ssid.toCharArray(sta_ssid, 33);
-  bool portChanged  = (newPort  != nmeaPort);
-  bool protoChanged = (newProto != nmeaProto);
-  bool hostChanged  = (hostStr  != nmeaHost);
-  nmeaPort  = newPort;
-  nmeaProto = newProto;
-  nmeaHost  = hostStr;
-
-  if (portChanged || protoChanged || hostChanged) {
-    bindTransport(); // ota heti käyttöön
-  }
+  // Reload configuration
+  loadConfig();
+  bindTransport();
 
   g_srv->send(200, "text/plain", "OK");
 }
@@ -254,6 +292,22 @@ static void handleStatus(){
   j += (nmeaProto==PROTO_TCP?"TCP":nmeaProto==PROTO_HTTP?"HTTP":"UDP"); 
   j += "\"";
   j += ",\"host\":\"";      j += nmeaHost; j += "\"";
+  j += ",\"conn_profile\":\""; j += connProfileName; j += "\"";
+  j += ",\"conn_mode\":"; j += prefs.getUChar("conn_mode", 0);
+  j += ",\"p1_name\":\""; j += prefs.getString("p1_name", "Yachta"); j += "\"";
+  j += ",\"p1_proto\":\"";
+  uint8_t proto1 = prefs.getUChar("p1_proto", PROTO_TCP);
+  j += (proto1==PROTO_TCP?"tcp":proto1==PROTO_HTTP?"http":"udp");
+  j += "\"";
+  j += ",\"p1_host\":\""; j += prefs.getString("p1_host", "192.168.68.145"); j += "\"";
+  j += ",\"p1_port\":"; j += prefs.getUShort("p1_port", 6666);
+  j += ",\"p2_name\":\""; j += prefs.getString("p2_name", "OpenPlotter"); j += "\"";
+  j += ",\"p2_proto\":\"";
+  uint8_t proto2 = prefs.getUChar("p2_proto", PROTO_TCP);
+  j += (proto2==PROTO_TCP?"tcp":proto2==PROTO_HTTP?"http":"udp");
+  j += "\"";
+  j += ",\"p2_host\":\""; j += prefs.getString("p2_host", ""); j += "\"";
+  j += ",\"p2_port\":"; j += prefs.getUShort("p2_port", 10110);
   j += ",\"tcp_connected\":"; j += (tcpConnected?"true":"false");
   j += ",\"sta_ip\":\"";   j += WiFi.localIP().toString(); j += "\"";
   j += ",\"sta_ssid\":\""; j += staSsidEsc; j += "\"";
@@ -261,6 +315,11 @@ static void handleStatus(){
   j += ",\"ap_ssid\":\"";  j += WiFi.softAPSSID(); j += "\"";
   j += ",\"ap_ip\":\"";    j += WiFi.softAPIP().toString(); j += "\"";
   j += ",\"ap_clients\":"; j += apClientCount;
+  j += ",\"wifi_mode\":"; j += prefs.getUChar("wifi_mode", 0);
+  j += ",\"w1_ssid\":\""; j += prefs.getString("w1_ssid", "Kontu"); j += "\"";
+  j += ",\"w1_pass\":\""; j += prefs.getString("w1_pass", "8765432A1"); j += "\"";
+  j += ",\"w2_ssid\":\""; j += prefs.getString("w2_ssid", ""); j += "\"";
+  j += ",\"w2_pass\":\""; j += prefs.getString("w2_pass", ""); j += "\"";
   j += ",\"nmea_data_age\":"; j += (millis() - lastNmeaDataMs);
   j += "}";
   g_srv->send(200, "application/json", j);

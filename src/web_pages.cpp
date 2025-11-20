@@ -409,15 +409,44 @@ String buildNetworkPage() {
   <p>Connect ESP32 to existing WiFi network</p>
 </div>
 <fieldset class="section-fieldset">
-  <div class=kv>
-    <label>Network Name (SSID)</label>
-    <input id=ssid type=text maxlength=32 style="min-width:220px" placeholder="loading...">
-    <span class="info-icon" data-tooltip="Your home/office WiFi network name">i</span>
+  <div style="margin-bottom: 20px; padding: 15px; background: #f0f0f0; border-radius: 4px;">
+    <h4 style="margin-top: 0;">Active WiFi Profile</h4>
+    <div class=kv>
+      <label>Select WiFi Network</label>
+      <div style="display: flex; gap: 20px;">
+        <label><input type="radio" id="wifi_mode_0" name="wifi_mode" value="0" checked> 
+          <strong>WiFi 1:</strong> <span id="w1_ssid_display">loading...</span></label>
+        <label><input type="radio" id="wifi_mode_1" name="wifi_mode" value="1"> 
+          <strong>WiFi 2:</strong> <span id="w2_ssid_display">loading...</span></label>
+      </div>
+    </div>
   </div>
-  <div class=kv>
-    <label>WiFi Password</label>
-    <input id=pass type=password maxlength=64 style="min-width:220px" placeholder="Enter new password">
-    <span class="info-icon" data-tooltip="Password for your home/office WiFi network">i</span>
+
+  <!-- WiFi Profile 1 -->
+  <div style="margin-top: 20px; padding: 12px; background: #e8f4f8; border-left: 4px solid #17a2b8; border-radius: 3px;">
+    <h4 style="margin-top: 0; color: #17a2b8;">WiFi Profile 1 Configuration</h4>
+    <div class=kv>
+      <label>Network Name (SSID)</label>
+      <input id=w1_ssid type=text maxlength=32 style="min-width:220px" placeholder="e.g. Kontu">
+    </div>
+    <div class=kv>
+      <label>WiFi Password</label>
+      <input id=w1_pass type=password maxlength=64 style="min-width:220px" placeholder="Enter password">
+    </div>
+  </div>
+
+  <!-- WiFi Profile 2 -->
+  <div style="margin-top: 20px; padding: 12px; background: #f0e8f8; border-left: 4px solid #9b59b6; border-radius: 3px;">
+    <h4 style="margin-top: 0; color: #9b59b6;">WiFi Profile 2 Configuration</h4>
+    <div class=kv>
+      <label>Network Name (SSID)</label>
+      <input id=w2_ssid type=text maxlength=32 style="min-width:220px" placeholder="e.g. OpenPlotter">
+      <span class="info-icon" data-tooltip="Leave empty to disable this profile">i</span>
+    </div>
+    <div class=kv>
+      <label>WiFi Password</label>
+      <input id=w2_pass type=password maxlength=64 style="min-width:220px" placeholder="Enter password">
+    </div>
   </div>
 </fieldset>
 
@@ -434,30 +463,74 @@ String buildNetworkPage() {
   </div>
 </fieldset>
 
-<!-- NMEA Data Input Settings -->
+<!-- NMEA Data Input Settings - Connection Profiles -->
 <div class="section-header" style="border-left-color: #ffc107;">
-  <h3 style="color: #e67e22;">NMEA Data Input</h3>
-  <p>Configure wind data reception from navigation software or instruments</p>
+  <h3 style="color: #e67e22;">NMEA Data Input - Connection Profiles</h3>
+  <p>Configure two connection profiles and select which one to use</p>
 </div>
 <fieldset class="section-fieldset">
-  <div class=kv>
-    <label>Protocol</label>
-    <select id=proto>
-      <option value="udp">UDP (listen for broadcasts)</option>
-      <option value="tcp">TCP (connect to server)</option>
-      <option value="http">HTTP (poll sensor data)</option>
-    </select>
-    <span class="info-icon" data-tooltip="UDP: Listen for broadcast data. TCP: Connect to specific server. HTTP: Poll NMEA data from HTTP sensor">i</span>
+  <div style="margin-bottom: 20px; padding: 15px; background: #f0f0f0; border-radius: 4px;">
+    <h4 style="margin-top: 0;">Active Profile</h4>
+    <div class=kv>
+      <label>Select Profile</label>
+      <div style="display: flex; gap: 20px;">
+        <label><input type="radio" id="conn_mode_0" name="conn_mode" value="0" checked onchange="updateProfileUI()"> 
+          <strong>Profile 1:</strong> <span id="p1_name_display">loading...</span></label>
+        <label><input type="radio" id="conn_mode_1" name="conn_mode" value="1" onchange="updateProfileUI()"> 
+          <strong>Profile 2:</strong> <span id="p2_name_display">loading...</span></label>
+      </div>
+    </div>
   </div>
-  <div class=kv>
-    <label>Host Address</label>
-    <input id=host type=text maxlength=64 placeholder="e.g. 192.168.68.50 or hostname" style="min-width:240px">
-    <span class="info-icon" data-tooltip="For TCP: Server IP address. For UDP: not used (listens on all interfaces)">i</span>
+
+  <!-- Profile 1 -->
+  <div style="margin-top: 20px; padding: 12px; background: #e8f4f8; border-left: 4px solid #17a2b8; border-radius: 3px;">
+    <h4 style="margin-top: 0; color: #17a2b8;">Profile 1 Configuration</h4>
+    <div class=kv>
+      <label>Name</label>
+      <input id=p1_name type=text maxlength=32 placeholder="e.g. Yachta" style="min-width:220px">
+    </div>
+    <div class=kv>
+      <label>Protocol</label>
+      <select id=p1_proto>
+        <option value="udp">UDP (listen for broadcasts)</option>
+        <option value="tcp">TCP (connect to server)</option>
+        <option value="http">HTTP (poll sensor data)</option>
+      </select>
+    </div>
+    <div class=kv>
+      <label>Host Address</label>
+      <input id=p1_host type=text maxlength=64 placeholder="e.g. 192.168.68.145" style="min-width:240px">
+    </div>
+    <div class=kv>
+      <label>Port</label>
+      <input id=p1_port type=number min=1 max=65535 step=1 style="width:140px" placeholder="e.g. 6666">
+    </div>
   </div>
-  <div class=kv>
-    <label>Port</label>
-    <input id=portIn type=number min=1 max=65535 step=1 style="width:140px" placeholder="loading...">
-    <span class="info-icon" data-tooltip="Network port number for NMEA data (common: 10110, 4800, 2000)">i</span>
+
+  <!-- Profile 2 -->
+  <div style="margin-top: 20px; padding: 12px; background: #f0e8f8; border-left: 4px solid #9b59b6; border-radius: 3px;">
+    <h4 style="margin-top: 0; color: #9b59b6;">Profile 2 Configuration</h4>
+    <div class=kv>
+      <label>Name</label>
+      <input id=p2_name type=text maxlength=32 placeholder="e.g. OpenPlotter" style="min-width:220px">
+    </div>
+    <div class=kv>
+      <label>Protocol</label>
+      <select id=p2_proto>
+        <option value="udp">UDP (listen for broadcasts)</option>
+        <option value="tcp">TCP (connect to server)</option>
+        <option value="http">HTTP (poll sensor data)</option>
+      </select>
+    </div>
+    <div class=kv>
+      <label>Host Address</label>
+      <input id=p2_host type=text maxlength=64 placeholder="e.g. 192.168.1.100" style="min-width:240px">
+      <span class="info-icon" data-tooltip="Leave empty to disable this profile">i</span>
+    </div>
+    <div class=kv>
+      <label>Port</label>
+      <input id=p2_port type=number min=1 max=65535 step=1 style="width:140px" placeholder="e.g. 10110">
+    </div>
   </div>
 </fieldset>
 
@@ -466,74 +539,128 @@ String buildNetworkPage() {
 </div>
 
 <script>
+function updateProfileUI() {
+  // This can be used for future UI updates based on selected profile
+}
+
 async function saveCfg(){
   try {
     showMessage('Saving settings...', 'info');
     
-    const ssid  = document.getElementById('ssid').value;
-    const pass  = document.getElementById('pass').value;
     const ap_pass = document.getElementById('ap_pass').value;
-    const port  = document.getElementById('portIn').value;
-    const proto = document.getElementById('proto').value;
-    const host  = document.getElementById('host').value;
-    const body = new URLSearchParams({ssid, pass, ap_pass, port, proto, host});
+    const conn_mode = document.querySelector('input[name="conn_mode"]:checked').value;
+    const wifi_mode = document.querySelector('input[name="wifi_mode"]:checked').value;
+    
+    // WiFi profiles
+    const w1_ssid = document.getElementById('w1_ssid').value;
+    const w1_pass = document.getElementById('w1_pass').value;
+    const w2_ssid = document.getElementById('w2_ssid').value;
+    const w2_pass = document.getElementById('w2_pass').value;
+    
+    // Connection profiles
+    const p1_name = document.getElementById('p1_name').value;
+    const p1_proto = document.getElementById('p1_proto').value;
+    const p1_host = document.getElementById('p1_host').value;
+    const p1_port = document.getElementById('p1_port').value;
+    
+    const p2_name = document.getElementById('p2_name').value;
+    const p2_proto = document.getElementById('p2_proto').value;
+    const p2_host = document.getElementById('p2_host').value;
+    const p2_port = document.getElementById('p2_port').value;
+    
+    const body = new URLSearchParams({
+      ap_pass, conn_mode, wifi_mode,
+      w1_ssid, w1_pass, w2_ssid, w2_pass,
+      p1_name, p1_proto, p1_host, p1_port,
+      p2_name, p2_proto, p2_host, p2_port
+    });
     
     await fetch('/savecfg', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
     showMessage('Settings saved successfully!', 'success');
-    setTimeout(refresh,200);
-  } catch(e) {
-    showMessage('Error saving settings: ' + e.message, 'error');
-  }
-}
-async function saveAndReconnect(){
-  try {
-    // Näytä "Saving..." -ilmoitus
-    showMessage('Saving settings...', 'info');
-    
-    const ssid  = document.getElementById('ssid').value;
-    const pass  = document.getElementById('pass').value;
-    const ap_pass = document.getElementById('ap_pass').value;
-    const port  = document.getElementById('portIn').value;
-    const proto = document.getElementById('proto').value;
-    const host  = document.getElementById('host').value;
-    const body = new URLSearchParams({ssid, pass, ap_pass, port, proto, host});
-    
-    await fetch('/savecfg', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
-    showMessage('Settings saved! Reconnecting...', 'success');
-    
-    await fetch('/reconnect');
-    await fetch('/reconnecttcp');
-    
-    showMessage('Settings applied successfully!', 'success');
-    setTimeout(refresh,1000);
+    setTimeout(() => loadNetworkValues(), 300);
   } catch(e) {
     showMessage('Error saving settings: ' + e.message, 'error');
   }
 }
 
-// Load current values
-async function loadNetworkValues() {
-  try {
-    const r = await fetch('/status'); const j = await r.json();
-    if (document.activeElement !== document.getElementById('ssid'))
-      document.getElementById('ssid').value = j.sta_ssid || "";
-    if (document.activeElement !== document.getElementById('pass'))
-      document.getElementById('pass').value = "";
-    if (document.activeElement !== document.getElementById('portIn'))
-      document.getElementById('portIn').value = j.port;
-    if (document.activeElement !== document.getElementById('proto'))
-      document.getElementById('proto').value = (j.proto || "UDP").toLowerCase();
-    if (document.activeElement !== document.getElementById('host'))
-      document.getElementById('host').value = j.host || "";
-    
-    // Update visible current values in labels
-    document.getElementById('ssidValue').textContent = '(current: ' + (j.sta_ssid || 'not set') + ')';
-    document.getElementById('passValue').textContent = j.sta_ssid ? '(password set)' : '(no password)';
-    document.getElementById('apPassValue').textContent = ' (AP password set)';
-    document.getElementById('protoValue').textContent = '(current: ' + (j.proto || 'UDP') + ')';
-    document.getElementById('hostValue').textContent = '(current: ' + (j.host || 'not set') + ')';
-    document.getElementById('portValue').textContent = '(current: ' + (j.port || 'not set') + ')';
-  } catch(e) {}
+async function saveAndReconnect(){
+  await saveCfg();
+  await fetch('/reconnect');
+  await fetch('/reconnecttcp');
+}
+
+// Load current values from /status API
+function loadNetworkValues() {
+  fetch('/status')
+    .then(r => r.json())
+    .then(j => {
+      console.log('Status JSON:', j);
+      
+      // WiFi profile selection
+      const wifiMode = j.wifi_mode !== undefined ? j.wifi_mode : 0;
+      const wifiRadio = document.getElementById('wifi_mode_' + wifiMode);
+      if (wifiRadio) wifiRadio.checked = true;
+      
+      // WiFi Profile 1
+      const w1s = j.w1_ssid || 'Kontu';
+      const d1s = document.getElementById('w1_ssid_display');
+      if (d1s) d1s.textContent = w1s;
+      const i1s = document.getElementById('w1_ssid');
+      if (i1s) i1s.value = w1s;
+      const i1p = document.getElementById('w1_pass');
+      if (i1p) i1p.value = j.w1_pass || '';
+      
+      // WiFi Profile 2
+      const w2s = j.w2_ssid || '';
+      const d2s = document.getElementById('w2_ssid_display');
+      if (d2s) d2s.textContent = w2s || '(empty)';
+      const i2s = document.getElementById('w2_ssid');
+      if (i2s) i2s.value = w2s;
+      const i2p = document.getElementById('w2_pass');
+      if (i2p) i2p.value = j.w2_pass || '';
+      
+      // Connection profile selection
+      const connMode = j.conn_mode !== undefined ? j.conn_mode : 0;
+      const connRadio = document.getElementById('conn_mode_' + connMode);
+      if (connRadio) connRadio.checked = true;
+      
+      // Profile 1
+      const p1n = j.p1_name || 'Yachta';
+      const d1 = document.getElementById('p1_name_display');
+      if (d1) d1.textContent = p1n;
+      const i1 = document.getElementById('p1_name');
+      if (i1) i1.value = p1n;
+      const i1pp = document.getElementById('p1_proto');
+      if (i1pp) i1pp.value = j.p1_proto || 'tcp';
+      const i1h = document.getElementById('p1_host');
+      if (i1h) i1h.value = j.p1_host || '192.168.68.145';
+      const i1pt = document.getElementById('p1_port');
+      if (i1pt) i1pt.value = j.p1_port || '6666';
+      
+      // Profile 2
+      const p2n = j.p2_name || 'OpenPlotter';
+      const d2 = document.getElementById('p2_name_display');
+      if (d2) d2.textContent = p2n;
+      const i2 = document.getElementById('p2_name');
+      if (i2) i2.value = p2n;
+      const i2pp = document.getElementById('p2_proto');
+      if (i2pp) i2pp.value = j.p2_proto || 'tcp';
+      const i2h = document.getElementById('p2_host');
+      if (i2h) i2h.value = j.p2_host || '';
+      const i2pt = document.getElementById('p2_port');
+      if (i2pt) i2pt.value = j.p2_port || '10110';
+      
+      console.log('Loaded: W1=' + w1s + ', W2=' + w2s + ', P1=' + p1n + ', P2=' + p2n);
+    })
+    .catch(e => {
+      console.error('Load error:', e);
+    });
+}
+
+// Save to localStorage when changed (for UI refresh)
+function saveToLocalStorage() {
+  const radioVal = document.querySelector('input[name="conn_mode"]:checked');
+  if (radioVal) localStorage.setItem('conn_mode', radioVal.value);
 }
 
 // Näyttää ilmoituksen käyttäjälle

@@ -33,6 +33,7 @@ extern int angleDeg;
 extern int lastAngleSent;
 extern String lastSentenceType;
 extern String lastSentenceRaw;
+extern String connProfileName;
 extern bool hasMwvR;
 extern bool hasMwvT;
 extern bool hasVwr;
@@ -52,6 +53,8 @@ extern uint32_t lastNmeaDataMs;
 #define AP_PASS "wind12345"
 
 // Core funktiot
+extern void loadConfig();
+void nmeaPollTaskFunc(void *pvParameters);
 void saveDisplayConfig(int displayNum);
 void saveNetworkConfig(const char* ssid, const char* pass);
 void startDisplay(int displayNum);

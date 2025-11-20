@@ -61,6 +61,7 @@ int  angleDeg = 0;
 int  lastAngleSent = 0;
 String lastSentenceType = "-";
 String lastSentenceRaw  = "-";
+String connProfileName = "Yachta";  // Current connection profile name
 bool freezeNMEA = false;
 
 // NMEA sentence type tracking (5s window)
@@ -75,9 +76,6 @@ char sta_pass[65] = {0};
 char ap_pass[65] = {0};
 
 WebServer server(80);
-
-/* ========= Funktioiden prototyypit ========= */
-void saveNetworkConfig(const char* ssid, const char* pass);
 
 // FreeRTOS task for NMEA polling on Core 1
 void nmeaPollTaskFunc(void *pvParameters) {
@@ -163,30 +161,76 @@ void loadConfig(){
     displays[i].gotoAngle = prefs.getInt((prefix + "gotoAngle").c_str(), 0);
   }
   
-  offsetDeg        = prefs.getInt("offset", 0);
-  nmeaPort         = (uint16_t)prefs.getUShort("udp_port", 80);
-  nmeaProto        = (uint8_t)prefs.getUChar("proto", PROTO_HTTP);
-  nmeaHost         = prefs.getString("host", "0.0.0.0");  // Default to server mode
+  offsetDeg = prefs.getInt("offset", 0);
   
-  // Use TCP stream for real-time NMEA data (now with non-blocking mode)
-  // Non-blocking TCP won't freeze WiFi stack anymore
-  nmeaProto = PROTO_TCP;
-  nmeaPort = 6666;
-  nmeaHost = "192.168.68.145";  // Yachta sensor IP (TCP stream endpoint)
+  // Load connection profile selection (0 or 1)
+  uint8_t connMode = prefs.getUChar("conn_mode", 0);  // Default: Profile 1
+  
+  // Load Profile 1 (Yachta - defaults)
+  String p1_name  = prefs.getString("p1_name", "Yachta");
+  uint8_t p1_proto = prefs.getUChar("p1_proto", PROTO_TCP);
+  String p1_host  = prefs.getString("p1_host", "192.168.68.145");
+  uint16_t p1_port = prefs.getUShort("p1_port", 6666);
+  
+  // Load Profile 2 (OpenPlotter - empty defaults)
+  String p2_name  = prefs.getString("p2_name", "OpenPlotter");
+  uint8_t p2_proto = prefs.getUChar("p2_proto", PROTO_TCP);
+  String p2_host  = prefs.getString("p2_host", "");
+  uint16_t p2_port = prefs.getUShort("p2_port", 10110);
+  
+  // Apply selected profile
+  if (connMode == 1 && p2_host.length() > 0) {
+    // Use Profile 2 (only if host is configured)
+    nmeaProto = p2_proto;
+    nmeaHost = p2_host;
+    nmeaPort = p2_port;
+    connProfileName = p2_name;
+  } else {
+    // Use Profile 1 (default)
+    nmeaProto = p1_proto;
+    nmeaHost = p1_host;
+    nmeaPort = p1_port;
+    connProfileName = p1_name;
+  }
   
   String s         = prefs.getString("sta_ssid", "");
-  if (s.length() == 0) s = "Kontu";  // Connect to main network instead of Yachta AP
   String ap        = prefs.getString("ap_pass", AP_PASS);
   
   // Set YachtaServer password
-  String p = "8765432A1";  // YachtaServer password
+  String p = prefs.getString("sta_pass", "8765432A1");  // Load from preferences or default
+  
+  // Load WiFi profile selection (0 or 1)
+  uint8_t wifi_mode = prefs.getUChar("wifi_mode", 255);  // 255 = not set (backward compat)
+  
+  // Load WiFi Profile 1
+  String w1_ssid = prefs.getString("w1_ssid", "");
+  String w1_pass = prefs.getString("w1_pass", "");
+  
+  // Load WiFi Profile 2
+  String w2_ssid = prefs.getString("w2_ssid", "");
+  String w2_pass = prefs.getString("w2_pass", "");
+  
+  // Apply selected WiFi profile (with fallback to old sta_ssid)
+  if (wifi_mode != 255) {
+    // New WiFi profile system is active
+    if (wifi_mode == 1 && w2_ssid.length() > 0) {
+      s = w2_ssid;
+      p = w2_pass;
+    } else if (w1_ssid.length() > 0) {
+      s = w1_ssid;
+      p = w1_pass;
+    }
+    // else: use old s and p values
+  }
+  // else: wifi_mode never set, use old sta_ssid/sta_pass system
   
   s.toCharArray(sta_ssid, sizeof(sta_ssid));
   p.toCharArray(sta_pass, sizeof(sta_pass));
   ap.toCharArray(ap_pass, sizeof(ap_pass));
   prefs.end();
   
-  Serial.printf("Network: Proto=TCP, Host='%s', Port=%u\n", nmeaHost.c_str(), nmeaPort);
+  Serial.printf("Network: Profile=%u (%s), Proto=%u, Host='%s', Port=%u\n", 
+    connMode, connProfileName.c_str(), nmeaProto, nmeaHost.c_str(), nmeaPort);
 }
 
 void saveNetworkConfig(const char* ssid, const char* pass) {
@@ -580,6 +624,7 @@ void connectSTA(){
 /* ========= Setup & loop ========= */
 void setup() {
   Serial.begin(115200);
+  delay(500);
 
   loadConfig();
 
