@@ -314,6 +314,20 @@ void updateDisplayPulse(int displayNum) {
   
   DisplayConfig &disp = displays[displayNum];
   
+  // Check for data timeout (4 seconds without NMEA data)
+  uint32_t dataAge = millis() - lastNmeaDataMs;
+  if (dataAge > 4000) {
+    // Data is stale - zero out speed and direction
+    if (sumlog_speed_kn > 0.0f) {
+      Serial.printf("Data timeout! Last NMEA data %u ms ago - zeroing speed\n", dataAge);
+      sumlog_speed_kn = 0.0f;
+    }
+    if (angleDeg != 0) {
+      Serial.printf("Data timeout! Last NMEA data %u ms ago - zeroing direction\n", dataAge);
+      angleDeg = 0;
+    }
+  }
+  
   if (disp.type == "sumlog") {
     // Stop immediately if raw speed is 0 (propeller stopped) - don't wait for filter
     if (sumlog_speed_kn < 0.01f && lastFreq[displayNum] != 0) {
@@ -709,7 +723,14 @@ void setup() {
 void loop() {
   // Core 0: Dedicated to web server (NMEA polling now runs on Core 1)
   static uint32_t lastDebug = 0;
+  static uint32_t lastTimeoutCheck = 0;
   uint32_t now = millis();
+  
+  // Check for data timeout every 100ms (ensures speed/direction zero when connection is lost)
+  if (now - lastTimeoutCheck > 100) {
+    lastTimeoutCheck = now;
+    updateAllDisplayPulses();
+  }
   
   // Heartbeat every 10 seconds
   if (now - lastDebug > 10000) {

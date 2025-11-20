@@ -57,7 +57,7 @@ SSID: VDO-Cal
 Password: wind12345
 Browser address: 192.168.4.1.
 
-From there you can later connect this device as client to your boats network. You also should be able to connect your wind anemometer to this AP with out another wifi network. (To be confirmed.)
+From there you can later connect this device as client to your boats network. You also should be able to connect your wind anemometer to this AP without another wifi network. 
 
 Reminder: This adapter works with SIN/COS-based VDO analog meters only. If you modify it to support other brands or modules, I’d love to hear about it and include your work in the code.
 
