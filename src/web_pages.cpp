@@ -409,22 +409,9 @@ String buildNetworkPage() {
   <p>Connect ESP32 to existing WiFi network</p>
 </div>
 <fieldset class="section-fieldset">
-  <div style="margin-bottom: 20px; padding: 15px; background: #f0f0f0; border-radius: 4px;">
-    <h4 style="margin-top: 0;">Active WiFi Profile</h4>
-    <div class=kv>
-      <label>Select WiFi Network</label>
-      <div style="display: flex; gap: 20px;">
-        <label><input type="radio" id="wifi_mode_0" name="wifi_mode" value="0" checked> 
-          <strong>WiFi 1:</strong> <span id="w1_ssid_display">loading...</span></label>
-        <label><input type="radio" id="wifi_mode_1" name="wifi_mode" value="1"> 
-          <strong>WiFi 2:</strong> <span id="w2_ssid_display">loading...</span></label>
-      </div>
-    </div>
-  </div>
-
-  <!-- WiFi Profile 1 -->
+  <!-- WiFi Profile 1 (only one profile now) -->
   <div style="margin-top: 20px; padding: 12px; background: #e8f4f8; border-left: 4px solid #17a2b8; border-radius: 3px;">
-    <h4 style="margin-top: 0; color: #17a2b8;">WiFi Profile 1 Configuration</h4>
+    <h4 style="margin-top: 0; color: #17a2b8;">WiFi Network Configuration</h4>
     <div class=kv>
       <label>Network Name (SSID)</label>
       <input id=w1_ssid type=text maxlength=32 style="min-width:220px" placeholder="e.g. Kontu">
@@ -432,20 +419,6 @@ String buildNetworkPage() {
     <div class=kv>
       <label>WiFi Password</label>
       <input id=w1_pass type=password maxlength=64 style="min-width:220px" placeholder="Enter password">
-    </div>
-  </div>
-
-  <!-- WiFi Profile 2 -->
-  <div style="margin-top: 20px; padding: 12px; background: #f0e8f8; border-left: 4px solid #9b59b6; border-radius: 3px;">
-    <h4 style="margin-top: 0; color: #9b59b6;">WiFi Profile 2 Configuration</h4>
-    <div class=kv>
-      <label>Network Name (SSID)</label>
-      <input id=w2_ssid type=text maxlength=32 style="min-width:220px" placeholder="e.g. OpenPlotter">
-      <span class="info-icon" data-tooltip="Leave empty to disable this profile">i</span>
-    </div>
-    <div class=kv>
-      <label>WiFi Password</label>
-      <input id=w2_pass type=password maxlength=64 style="min-width:220px" placeholder="Enter password">
     </div>
   </div>
 </fieldset>
@@ -534,6 +507,20 @@ String buildNetworkPage() {
   </div>
 </fieldset>
 
+<!-- Connection History -->
+<div class="section-header" style="border-left-color: #6c757d; margin-top: 30px;">
+  <h3 style="color: #6c757d;">Quick Connect - Recent Connections</h3>
+  <p>Select a recent connection to quickly populate Profile 1 settings</p>
+</div>
+<fieldset class="section-fieldset">
+  <div class=kv>
+    <label>Recent Connections</label>
+    <select id=connection_history onchange="applyHistoryEntry()">
+      <option value="">-- Select a recent connection --</option>
+    </select>
+  </div>
+</fieldset>
+
 <div class=row style="margin-top: 20px;">
   <button onclick="saveAndReconnect()">Save & Apply All Settings</button>
 </div>
@@ -549,13 +536,10 @@ async function saveCfg(){
     
     const ap_pass = document.getElementById('ap_pass').value;
     const conn_mode = document.querySelector('input[name="conn_mode"]:checked').value;
-    const wifi_mode = document.querySelector('input[name="wifi_mode"]:checked').value;
     
-    // WiFi profiles
+    // WiFi settings (single profile only)
     const w1_ssid = document.getElementById('w1_ssid').value;
     const w1_pass = document.getElementById('w1_pass').value;
-    const w2_ssid = document.getElementById('w2_ssid').value;
-    const w2_pass = document.getElementById('w2_pass').value;
     
     // Connection profiles
     const p1_name = document.getElementById('p1_name').value;
@@ -569,8 +553,8 @@ async function saveCfg(){
     const p2_port = document.getElementById('p2_port').value;
     
     const body = new URLSearchParams({
-      ap_pass, conn_mode, wifi_mode,
-      w1_ssid, w1_pass, w2_ssid, w2_pass,
+      ap_pass, conn_mode,
+      w1_ssid, w1_pass,
       p1_name, p1_proto, p1_host, p1_port,
       p2_name, p2_proto, p2_host, p2_port
     });
@@ -596,61 +580,49 @@ function loadNetworkValues() {
     .then(j => {
       console.log('Status JSON:', j);
       
-      // WiFi profile selection
-      const wifiMode = j.wifi_mode !== undefined ? j.wifi_mode : 0;
-      const wifiRadio = document.getElementById('wifi_mode_' + wifiMode);
-      if (wifiRadio) wifiRadio.checked = true;
-      
-      // WiFi Profile 1
-      const w1s = j.w1_ssid || 'Kontu';
-      const d1s = document.getElementById('w1_ssid_display');
-      if (d1s) d1s.textContent = w1s;
+      // WiFi Profile 1 - Show STORED value for editing
       const i1s = document.getElementById('w1_ssid');
-      if (i1s) i1s.value = w1s;
+      if (i1s) i1s.value = j.w1_ssid || '';
       const i1p = document.getElementById('w1_pass');
       if (i1p) i1p.value = j.w1_pass || '';
-      
-      // WiFi Profile 2
-      const w2s = j.w2_ssid || '';
-      const d2s = document.getElementById('w2_ssid_display');
-      if (d2s) d2s.textContent = w2s || '(empty)';
-      const i2s = document.getElementById('w2_ssid');
-      if (i2s) i2s.value = w2s;
-      const i2p = document.getElementById('w2_pass');
-      if (i2p) i2p.value = j.w2_pass || '';
       
       // Connection profile selection
       const connMode = j.conn_mode !== undefined ? j.conn_mode : 0;
       const connRadio = document.getElementById('conn_mode_' + connMode);
       if (connRadio) connRadio.checked = true;
       
-      // Profile 1
+      // Profile 1 - Display shows active/configured, Input shows stored for editing
       const p1n = j.p1_name || 'Yachta';
       const d1 = document.getElementById('p1_name_display');
       if (d1) d1.textContent = p1n;
       const i1 = document.getElementById('p1_name');
       if (i1) i1.value = p1n;
       const i1pp = document.getElementById('p1_proto');
-      if (i1pp) i1pp.value = j.p1_proto || 'tcp';
+      if (i1pp) i1pp.value = j.p1_proto_stored || 'tcp';
       const i1h = document.getElementById('p1_host');
-      if (i1h) i1h.value = j.p1_host || '192.168.68.145';
+      if (i1h) i1h.value = j.p1_host_stored || '192.168.68.145';
       const i1pt = document.getElementById('p1_port');
-      if (i1pt) i1pt.value = j.p1_port || '6666';
+      if (i1pt) i1pt.value = j.p1_port_stored || '6666';
       
-      // Profile 2
+      // Profile 2 - Display shows active/configured, Input shows stored for editing
       const p2n = j.p2_name || 'OpenPlotter';
       const d2 = document.getElementById('p2_name_display');
       if (d2) d2.textContent = p2n;
       const i2 = document.getElementById('p2_name');
       if (i2) i2.value = p2n;
       const i2pp = document.getElementById('p2_proto');
-      if (i2pp) i2pp.value = j.p2_proto || 'tcp';
+      if (i2pp) i2pp.value = j.p2_proto_stored || 'tcp';
       const i2h = document.getElementById('p2_host');
-      if (i2h) i2h.value = j.p2_host || '';
+      if (i2h) i2h.value = j.p2_host_stored || '';
       const i2pt = document.getElementById('p2_port');
-      if (i2pt) i2pt.value = j.p2_port || '10110';
+      if (i2pt) i2pt.value = j.p2_port_stored || '10110';
       
       console.log('Loaded: W1=' + w1s + ', W2=' + w2s + ', P1=' + p1n + ', P2=' + p2n);
+      
+      // Load connection history
+      if (j.connection_history) {
+        populateConnectionHistory(j.connection_history);
+      }
     })
     .catch(e => {
       console.error('Load error:', e);
@@ -686,6 +658,46 @@ function showMessage(text, type = 'info') {
   setTimeout(() => {
     if (msg.parentNode) msg.remove();
   }, 3000);
+}
+
+// Populate connection history dropdown
+function populateConnectionHistory(history) {
+  const select = document.getElementById('connection_history');
+  if (!select) return;
+  
+  // Clear existing options except first
+  while (select.options.length > 1) {
+    select.remove(1);
+  }
+  
+  // Add history entries
+  if (history && history.length > 0) {
+    history.forEach((entry, idx) => {
+      const opt = document.createElement('option');
+      opt.value = entry;
+      opt.textContent = `${idx + 1}. ${entry}`;
+      select.appendChild(opt);
+    });
+  }
+}
+
+// Apply selected history entry to Profile 1
+function applyHistoryEntry() {
+  const select = document.getElementById('connection_history');
+  const entry = select.value;
+  
+  if (!entry) return;
+  
+  // Parse "host:port"
+  const parts = entry.split(':');
+  if (parts.length === 2) {
+    document.getElementById('p1_host').value = parts[0];
+    document.getElementById('p1_port').value = parts[1];
+    showMessage(`Profile 1 set to: ${entry}`, 'info');
+  }
+  
+  // Reset dropdown
+  select.value = '';
 }
 
 window.addEventListener('load', () => {

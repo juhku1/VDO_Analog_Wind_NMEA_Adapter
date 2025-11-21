@@ -44,6 +44,7 @@ uint32_t lastNmeaDataMs = 0;  // Timestamp of last received NMEA data
 
 // FreeRTOS task for NMEA polling on Core 1
 TaskHandle_t nmeaPollTask = NULL;
+volatile bool pauseNmeaPoll = false;  // Flag to pause NMEA polling during config save
 
 #define SDA_PIN   21
 #define SCL_PIN   22
@@ -95,6 +96,12 @@ void nmeaPollTaskFunc(void *pvParameters) {
   tcpClient.setTimeout(0);
   
   while(1) {
+    // Check if we should pause during config save
+    if (pauseNmeaPoll) {
+      vTaskDelay(pdMS_TO_TICKS(10));
+      continue;  // Skip this iteration until flag cleared
+    }
+    
     if(!freezeNMEA) {
       // TCP Client mode - use persistent global tcpClient with non-blocking mode
       ensureTCPConnected(tcpClient);
