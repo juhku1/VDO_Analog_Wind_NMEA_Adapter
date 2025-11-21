@@ -256,6 +256,62 @@ window.addEventListener('load', () => {
 // Status page (home)
 String buildStatusPage() {
   return buildPageHeader("status") + R"HTML(
+<style>
+.edit-btn {
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  margin-left: 8px;
+}
+.edit-btn:hover {
+  background: #0056b3;
+}
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.5);
+}
+.modal.show {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal-content {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.modal-header {
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 15px;
+  color: #333;
+}
+.modal-close {
+  float: right;
+  font-size: 24px;
+  cursor: pointer;
+  color: #999;
+}
+.modal-close:hover {
+  color: #333;
+}
+</style>
+
 <!-- Page Header -->
 <div class="section-header">
   <h3>System Status</h3>
@@ -283,14 +339,17 @@ String buildStatusPage() {
   </div>
 </fieldset>
 
-<!-- Status Overview -->
+<!-- Status Overview with Edit Buttons -->
 <fieldset>
   <legend>System Status</legend>
   
   <!-- WiFi Station (Client) -->
-  <div style="margin:12px 0; padding:8px; background:#f8f9fa; border-left:4px solid #007bff;">
-    <h4 style="margin:0 0 8px 0; color:#007bff;">WiFi Station (Client)</h4>
-    <div style="line-height:1.5;">
+  <div style="margin:12px 0; padding:12px; background:#f8f9fa; border-left:4px solid #007bff; border-radius:3px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <h4 style="margin:0; color:#007bff;">WiFi Station (Client)</h4>
+      <button class="edit-btn" onclick="openEditWiFi()">Edit</button>
+    </div>
+    <div style="line-height:1.8;">
       <div><strong>Network:</strong> <span id="sta_ssid_name">loading...</span></div>
       <div><strong>IP:</strong> <span id="sta_ip">loading...</span></div>
       <div><strong>Status:</strong> <span id="sta_status">loading...</span></div>
@@ -298,23 +357,45 @@ String buildStatusPage() {
   </div>
   
   <!-- Access Point -->
-  <div style="margin:12px 0; padding:8px; background:#f8f9fa; border-left:4px solid #28a745;">
-    <h4 style="margin:0 0 8px 0; color:#28a745;">Access Point</h4>
-    <div style="line-height:1.5;">
-      <div><strong>Network:</strong> <span id="ap_ssid_name">loading...</span></div>
+  <div style="margin:12px 0; padding:12px; background:#f8f9fa; border-left:4px solid #28a745; border-radius:3px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <h4 style="margin:0; color:#28a745;">Access Point</h4>
+      <button class="edit-btn" onclick="openEditAP()">Edit</button>
+    </div>
+    <div style="line-height:1.8;">
+      <div><strong>Network:</strong> VDO-Cal</div>
       <div><strong>IP:</strong> <span id="ap_ip">loading...</span></div>
       <div><strong>Status:</strong> <span id="ap_status">loading...</span></div>
     </div>
   </div>
   
-  <!-- NMEA Input -->
-  <div style="margin:12px 0; padding:8px; background:#f8f9fa; border-left:4px solid #ffc107;">
-    <h4 style="margin:0 0 8px 0; color:#e67e22;">NMEA Input</h4>
-    <div style="line-height:1.5;">
-      <div><strong>Protocol:</strong> <span id="nmea_protocol">loading...</span></div>
-      <div><strong>Port:</strong> <span id="nmea_port">loading...</span></div>
-      <div><strong>Host:</strong> <span id="nmea_host">loading...</span></div>
-      <div><strong>Status:</strong> <span id="nmea_status">loading...</span></div>
+  <!-- NMEA Input 1 -->
+  <div style="margin:12px 0; padding:12px; background:#f8f9fa; border-left:4px solid #ffc107; border-radius:3px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <h4 style="margin:0; color:#e67e22;">NMEA Input 1</h4>
+      <button class="edit-btn" onclick="openEditNMEA1()">Edit</button>
+    </div>
+    <div style="line-height:1.8;">
+      <div><strong>Profile:</strong> <span id="nmea1_name">loading...</span></div>
+      <div><strong>Protocol:</strong> <span id="nmea1_protocol">loading...</span></div>
+      <div><strong>Host:</strong> <span id="nmea1_host">loading...</span></div>
+      <div><strong>Port:</strong> <span id="nmea1_port">loading...</span></div>
+      <div><strong>Status:</strong> <span id="nmea1_status">loading...</span></div>
+    </div>
+  </div>
+
+  <!-- NMEA Input 2 -->
+  <div style="margin:12px 0; padding:12px; background:#f8f9fa; border-left:4px solid #ffc107; border-radius:3px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <h4 style="margin:0; color:#e67e22;">NMEA Input 2</h4>
+      <button class="edit-btn" onclick="openEditNMEA2()">Edit</button>
+    </div>
+    <div style="line-height:1.8;">
+      <div><strong>Profile:</strong> <span id="nmea2_name">loading...</span></div>
+      <div><strong>Protocol:</strong> <span id="nmea2_protocol">loading...</span></div>
+      <div><strong>Host:</strong> <span id="nmea2_host">loading...</span></div>
+      <div><strong>Port:</strong> <span id="nmea2_port">loading...</span></div>
+      <div><strong>Status:</strong> <span id="nmea2_status">loading...</span></div>
     </div>
   </div>
 </fieldset>
@@ -327,10 +408,296 @@ String buildStatusPage() {
     <button onclick="window.location.href='/display2'">Configure Display 2</button>
     <button onclick="window.location.href='/display3'">Configure Display 3</button>
   </div>
-  <div class=row>
-    <button onclick="window.location.href='/network'">Network Settings</button>
-  </div>
 </fieldset>
+
+<!-- WiFi Edit Modal -->
+<div id="wifiModal" class="modal">
+  <div class="modal-content">
+    <span class="modal-close" onclick="closeWiFiModal()">&times;</span>
+    <div class="modal-header">Edit WiFi Connection</div>
+    
+    <div style="margin-bottom: 15px; padding: 12px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 3px;">
+      <strong style="color: #856404;">Select Profile to Use</strong>
+      <div style="margin-top: 8px; display: flex; gap: 20px;">
+        <label><input type="radio" id="wifi_mode_0" name="wifi_mode" value="0" checked> Profile 1</label>
+        <label><input type="radio" id="wifi_mode_1" name="wifi_mode" value="1"> Profile 2</label>
+      </div>
+    </div>
+
+    <div style="margin-bottom: 12px;">
+      <label>WiFi Profile 1 - SSID:</label>
+      <input id="w1_ssid" type="text" maxlength="32" style="width:100%; padding:6px; margin-top:4px;">
+    </div>
+    <div style="margin-bottom: 12px;">
+      <label>WiFi Profile 1 - Password:</label>
+      <input id="w1_pass" type="password" maxlength="64" style="width:100%; padding:6px; margin-top:4px;">
+    </div>
+
+    <div style="margin-bottom: 12px;">
+      <label>WiFi Profile 2 - SSID:</label>
+      <input id="w2_ssid" type="text" maxlength="32" style="width:100%; padding:6px; margin-top:4px;" placeholder="(leave empty to disable)">
+    </div>
+    <div style="margin-bottom: 12px;">
+      <label>WiFi Profile 2 - Password:</label>
+      <input id="w2_pass" type="password" maxlength="64" style="width:100%; padding:6px; margin-top:4px;">
+    </div>
+
+    <div style="display: flex; gap: 8px; margin-top: 20px;">
+      <button onclick="saveWiFiSettings()" style="flex:1; padding:8px; background:#28a745; color:white; border:none; border-radius:4px; cursor:pointer;">Save & Apply</button>
+      <button onclick="closeWiFiModal()" style="flex:1; padding:8px; background:#999; color:white; border:none; border-radius:4px; cursor:pointer;">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- AP Edit Modal -->
+<div id="apModal" class="modal">
+  <div class="modal-content">
+    <span class="modal-close" onclick="closeAPModal()">&times;</span>
+    <div class="modal-header">Edit Access Point Settings</div>
+    
+    <div style="margin-bottom: 12px;">
+      <label>Network Name:</label>
+      <input type="text" value="VDO-Cal" disabled style="width:100%; padding:6px; margin-top:4px; background:#f0f0f0;">
+    </div>
+
+    <div style="margin-bottom: 12px;">
+      <label>AP Password:</label>
+      <input id="ap_pass" type="password" maxlength="64" style="width:100%; padding:6px; margin-top:4px;">
+    </div>
+
+    <div style="display: flex; gap: 8px; margin-top: 20px;">
+      <button onclick="saveAPSettings()" style="flex:1; padding:8px; background:#28a745; color:white; border:none; border-radius:4px; cursor:pointer;">Save & Apply</button>
+      <button onclick="closeAPModal()" style="flex:1; padding:8px; background:#999; color:white; border:none; border-radius:4px; cursor:pointer;">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- NMEA Input 1 Edit Modal -->
+<div id="nmea1Modal" class="modal">
+  <div class="modal-content">
+    <span class="modal-close" onclick="closeNMEA1Modal()">&times;</span>
+    <div class="modal-header">Edit NMEA Input 1</div>
+    
+    <div style="margin-bottom: 12px;">
+      <label>Name:</label>
+      <input id="p1_name" type="text" maxlength="32" style="width:100%; padding:6px; margin-top:4px;" placeholder="e.g. Yachta">
+    </div>
+    <div style="margin-bottom: 12px;">
+      <label>Protocol:</label>
+      <select id="p1_proto" style="width:100%; padding:6px; margin-top:4px;">
+        <option value="tcp">TCP (connect to server)</option>
+        <option value="udp">UDP (listen for broadcasts)</option>
+        <option value="http">HTTP (poll sensor data)</option>
+      </select>
+    </div>
+    <div style="margin-bottom: 12px;">
+      <label>Host Address:</label>
+      <input id="p1_host" type="text" maxlength="64" style="width:100%; padding:6px; margin-top:4px;" placeholder="e.g. 192.168.68.145">
+    </div>
+    <div style="margin-bottom: 12px;">
+      <label>Port:</label>
+      <input id="p1_port" type="number" min="1" max="65535" style="width:100%; padding:6px; margin-top:4px;" placeholder="e.g. 6666">
+    </div>
+
+    <div style="display: flex; gap: 8px; margin-top: 20px;">
+      <button onclick="saveNMEA1Settings()" style="flex:1; padding:8px; background:#28a745; color:white; border:none; border-radius:4px; cursor:pointer;">Save & Apply</button>
+      <button onclick="closeNMEA1Modal()" style="flex:1; padding:8px; background:#999; color:white; border:none; border-radius:4px; cursor:pointer;">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- NMEA Input 2 Edit Modal -->
+<div id="nmea2Modal" class="modal">
+  <div class="modal-content">
+    <span class="modal-close" onclick="closeNMEA2Modal()">&times;</span>
+    <div class="modal-header">Edit NMEA Input 2</div>
+    
+    <div style="margin-bottom: 12px;">
+      <label>Name:</label>
+      <input id="p2_name" type="text" maxlength="32" style="width:100%; padding:6px; margin-top:4px;" placeholder="e.g. OpenPlotter">
+    </div>
+    <div style="margin-bottom: 12px;">
+      <label>Protocol:</label>
+      <select id="p2_proto" style="width:100%; padding:6px; margin-top:4px;">
+        <option value="tcp">TCP (connect to server)</option>
+        <option value="udp">UDP (listen for broadcasts)</option>
+        <option value="http">HTTP (poll sensor data)</option>
+      </select>
+    </div>
+    <div style="margin-bottom: 12px;">
+      <label>Host Address:</label>
+      <input id="p2_host" type="text" maxlength="64" style="width:100%; padding:6px; margin-top:4px;" placeholder="e.g. 192.168.1.100">
+    </div>
+    <div style="margin-bottom: 12px;">
+      <label>Port:</label>
+      <input id="p2_port" type="number" min="1" max="65535" style="width:100%; padding:6px; margin-top:4px;" placeholder="e.g. 10110">
+    </div>
+
+    <div style="display: flex; gap: 8px; margin-top: 20px;">
+      <button onclick="saveNMEA2Settings()" style="flex:1; padding:8px; background:#28a745; color:white; border:none; border-radius:4px; cursor:pointer;">Save & Apply</button>
+      <button onclick="closeNMEA2Modal()" style="flex:1; padding:8px; background:#999; color:white; border:none; border-radius:4px; cursor:pointer;">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Modal control functions
+function openEditWiFi() { document.getElementById('wifiModal').classList.add('show'); loadWiFiSettings(); }
+function closeWiFiModal() { document.getElementById('wifiModal').classList.remove('show'); }
+function openEditAP() { document.getElementById('apModal').classList.add('show'); loadAPSettings(); }
+function closeAPModal() { document.getElementById('apModal').classList.remove('show'); }
+function openEditNMEA1() { document.getElementById('nmea1Modal').classList.add('show'); loadNMEA1Settings(); }
+function closeNMEA1Modal() { document.getElementById('nmea1Modal').classList.remove('show'); }
+function openEditNMEA2() { document.getElementById('nmea2Modal').classList.add('show'); loadNMEA2Settings(); }
+function closeNMEA2Modal() { document.getElementById('nmea2Modal').classList.remove('show'); }
+
+// Load settings into modals
+async function loadWiFiSettings() {
+  try {
+    const r = await fetch('/status');
+    const j = await r.json();
+    document.getElementById('wifi_mode_' + (j.wifi_mode || 0)).checked = true;
+    document.getElementById('w1_ssid').value = j.w1_ssid || '';
+    document.getElementById('w1_pass').value = j.w1_pass || '';
+    document.getElementById('w2_ssid').value = j.w2_ssid || '';
+    document.getElementById('w2_pass').value = j.w2_pass || '';
+  } catch(e) { console.error('Load error:', e); }
+}
+async function loadAPSettings() {
+  try {
+    const r = await fetch('/status');
+    const j = await r.json();
+    document.getElementById('ap_pass').value = j.ap_pass || 'wind12345';
+  } catch(e) { console.error('Load error:', e); }
+}
+async function loadNMEA1Settings() {
+  try {
+    const r = await fetch('/status');
+    const j = await r.json();
+    document.getElementById('p1_name').value = j.p1_name || 'Yachta';
+    document.getElementById('p1_proto').value = (j.p1_proto || 'tcp').toLowerCase();
+    document.getElementById('p1_host').value = j.p1_host || '192.168.68.145';
+    document.getElementById('p1_port').value = j.p1_port || '6666';
+  } catch(e) { console.error('Load error:', e); }
+}
+async function loadNMEA2Settings() {
+  try {
+    const r = await fetch('/status');
+    const j = await r.json();
+    document.getElementById('p2_name').value = j.p2_name || 'OpenPlotter';
+    document.getElementById('p2_proto').value = (j.p2_proto || 'tcp').toLowerCase();
+    document.getElementById('p2_host').value = j.p2_host || '';
+    document.getElementById('p2_port').value = j.p2_port || '10110';
+  } catch(e) { console.error('Load error:', e); }
+}
+
+// Save functions
+async function saveWiFiSettings() {
+  try {
+    const body = new URLSearchParams({
+      wifi_mode: document.querySelector('input[name="wifi_mode"]:checked').value,
+      w1_ssid: document.getElementById('w1_ssid').value,
+      w1_pass: document.getElementById('w1_pass').value,
+      w2_ssid: document.getElementById('w2_ssid').value,
+      w2_pass: document.getElementById('w2_pass').value,
+      conn_mode: '0', ap_pass: 'wind12345', p1_name: 'Yachta', p1_proto: 'tcp', p1_host: '192.168.68.145', p1_port: '6666', p2_name: 'OpenPlotter', p2_proto: 'tcp', p2_host: '', p2_port: '10110'
+    });
+    await fetch('/savecfg', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
+    await fetch('/reconnect');
+    showMessage('WiFi settings saved!', 'success');
+    closeWiFiModal();
+    setTimeout(() => location.reload(), 1000);
+  } catch(e) { showMessage('Error: ' + e.message, 'error'); }
+}
+
+async function saveAPSettings() {
+  try {
+    const body = new URLSearchParams({
+      ap_pass: document.getElementById('ap_pass').value,
+      wifi_mode: '0', conn_mode: '0', w1_ssid: '', w1_pass: '', w2_ssid: '', w2_pass: '', p1_name: 'Yachta', p1_proto: 'tcp', p1_host: '192.168.68.145', p1_port: '6666', p2_name: 'OpenPlotter', p2_proto: 'tcp', p2_host: '', p2_port: '10110'
+    });
+    await fetch('/savecfg', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
+    await fetch('/reconnect');
+    showMessage('AP password saved!', 'success');
+    closeAPModal();
+    setTimeout(() => location.reload(), 1000);
+  } catch(e) { showMessage('Error: ' + e.message, 'error'); }
+}
+
+async function saveNMEA1Settings() {
+  try {
+    const body = new URLSearchParams({
+      p1_name: document.getElementById('p1_name').value,
+      p1_proto: document.getElementById('p1_proto').value,
+      p1_host: document.getElementById('p1_host').value,
+      p1_port: document.getElementById('p1_port').value,
+      wifi_mode: '0', conn_mode: '0', ap_pass: 'wind12345', w1_ssid: '', w1_pass: '', w2_ssid: '', w2_pass: '', p2_name: 'OpenPlotter', p2_proto: 'tcp', p2_host: '', p2_port: '10110'
+    });
+    await fetch('/savecfg', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
+    showMessage('NMEA Input 1 saved!', 'success');
+    closeNMEA1Modal();
+    setTimeout(() => location.reload(), 1000);
+  } catch(e) { showMessage('Error: ' + e.message, 'error'); }
+}
+
+async function saveNMEA2Settings() {
+  try {
+    const body = new URLSearchParams({
+      p2_name: document.getElementById('p2_name').value,
+      p2_proto: document.getElementById('p2_proto').value,
+      p2_host: document.getElementById('p2_host').value,
+      p2_port: document.getElementById('p2_port').value,
+      wifi_mode: '0', conn_mode: '0', ap_pass: 'wind12345', w1_ssid: '', w1_pass: '', w2_ssid: '', w2_pass: '', p1_name: 'Yachta', p1_proto: 'tcp', p1_host: '192.168.68.145', p1_port: '6666'
+    });
+    await fetch('/savecfg', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
+    showMessage('NMEA Input 2 saved!', 'success');
+    closeNMEA2Modal();
+    setTimeout(() => location.reload(), 1000);
+  } catch(e) { showMessage('Error: ' + e.message, 'error'); }
+}
+
+function showMessage(text, type = 'info') {
+  const existing = document.getElementById('notification');
+  if (existing) existing.remove();
+  const msg = document.createElement('div');
+  msg.id = 'notification';
+  msg.textContent = text;
+  msg.style.cssText = `position: fixed; top: 20px; right: 20px; z-index: 1001; padding: 12px 16px; border-radius: 4px; color: white; font-weight: bold; background: ${type === 'success' ? '#28a745' : type === 'error' ? '#dc3545' : '#007bff'}; box-shadow: 0 4px 12px rgba(0,0,0,0.15);`;
+  document.body.appendChild(msg);
+  setTimeout(() => { if (msg.parentNode) msg.remove(); }, 3000);
+}
+
+// Close modals when clicking outside
+window.addEventListener('click', (e) => {
+  ['wifiModal', 'apModal', 'nmea1Modal', 'nmea2Modal'].forEach(id => {
+    const modal = document.getElementById(id);
+    if (e.target === modal) modal.classList.remove('show');
+  });
+});
+
+// Load status data on page load
+function loadStatusData() {
+  fetch('/status')
+    .then(r => r.json())
+    .then(j => {
+      // NMEA Input 1
+      document.getElementById('nmea1_name').textContent = j.p1_name || 'Yachta';
+      document.getElementById('nmea1_protocol').textContent = (j.p1_proto || 'tcp').toUpperCase();
+      document.getElementById('nmea1_host').textContent = j.p1_host || '192.168.68.145';
+      document.getElementById('nmea1_port').textContent = j.p1_port || '6666';
+      
+      // NMEA Input 2
+      document.getElementById('nmea2_name').textContent = j.p2_name || 'OpenPlotter';
+      document.getElementById('nmea2_protocol').textContent = (j.p2_proto || 'tcp').toUpperCase();
+      document.getElementById('nmea2_host').textContent = j.p2_host || '';
+      document.getElementById('nmea2_port').textContent = j.p2_port || '10110';
+    })
+    .catch(e => console.error('Load error:', e));
+}
+
+// Load data when page loads
+window.addEventListener('load', loadStatusData);
+</script>
 )HTML" + buildPageFooter();
 }
 

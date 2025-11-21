@@ -16,10 +16,6 @@ static void handleHome() {
   g_srv->send(200, "text/html", buildStatusPage());
 }
 
-static void handleNetwork() {
-  g_srv->send(200, "text/html", buildNetworkPage());
-}
-
 static void handleDisplay1() {
   g_srv->send(200, "text/html", buildDisplayPage(1));
 }
@@ -320,6 +316,7 @@ static void handleStatus(){
   j += ",\"w1_pass\":\""; j += prefs.getString("w1_pass", "8765432A1"); j += "\"";
   j += ",\"w2_ssid\":\""; j += prefs.getString("w2_ssid", ""); j += "\"";
   j += ",\"w2_pass\":\""; j += prefs.getString("w2_pass", ""); j += "\"";
+  j += ",\"ap_pass\":\""; j += prefs.getString("ap_pass", "wind12345"); j += "\"";
   j += ",\"nmea_data_age\":"; j += (millis() - lastNmeaDataMs);
   j += "}";
   g_srv->send(200, "application/json", j);
@@ -330,7 +327,6 @@ void setupWebUI(WebServer& server){
   
   // Multi-page handlers
   server.on("/",            HTTP_GET,  handleHome);
-  server.on("/network",     HTTP_GET,  handleNetwork);
   server.on("/display1",    HTTP_GET,  handleDisplay1);
   server.on("/display2",    HTTP_GET,  handleDisplay2);
   server.on("/display3",    HTTP_GET,  handleDisplay3);
