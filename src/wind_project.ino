@@ -642,7 +642,24 @@ void setup() {
 
   loadConfig();
 
+  // Initialize WiFi FIRST to reduce power draw during DAC init
+  WiFi.mode(WIFI_AP_STA);
+  delay(100);
+  
+  // Varmista että ap_pass ei ole tyhjä
+  if (strlen(ap_pass) < 8) {
+    strcpy(ap_pass, AP_PASS);
+    Serial.printf("AP password was empty, using default: %s\n", ap_pass);
+  }
+  
+  // Start AP early with delay to stabilize
+  WiFi.softAP(AP_SSID, ap_pass);
+  Serial.printf("AP started: %s with password: %s\n", AP_SSID, ap_pass);
+  delay(200);  // Let WiFi stack stabilize
+  
+  // Now initialize DAC after WiFi is stable
   Wire.begin(SDA_PIN, SCL_PIN, I2C_HZ);
+  delay(100);  // Give I2C time to initialize
   
   // Try DAC init with timeout - don't get stuck forever if DAC missing
   int dacTries = 0;
@@ -672,20 +689,9 @@ void setup() {
     }
   }
 
-  WiFi.mode(WIFI_AP_STA);
-  
-  // Varmista että ap_pass ei ole tyhjä
-  if (strlen(ap_pass) < 8) {
-    strcpy(ap_pass, AP_PASS);
-    Serial.printf("AP password was empty, using default: %s\n", ap_pass);
-  }
-  
-  // Käynnistä STA ensin
+  // Käynnistä STA after AP and DAC
   connectSTA();
   
-  // Sitten AP
-  WiFi.softAP(AP_SSID, ap_pass);
-  Serial.printf("AP started: %s with password: %s\n", AP_SSID, ap_pass);
   bindTransport();
 
   setupWebUI(server);
