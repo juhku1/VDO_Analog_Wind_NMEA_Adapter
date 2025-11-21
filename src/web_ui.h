@@ -43,6 +43,7 @@ extern uint8_t  nmeaProto;
 extern uint16_t nmeaPort;
 extern String   nmeaHost;
 extern volatile bool tcpConnected;  // TCP connection state (set by Core 1, read by Core 0)
+extern volatile bool udpConnected;  // UDP connection state (set by Core 1, read by Core 0)
 extern char sta_ssid[];
 extern char sta_pass[];
 extern char ap_pass[];

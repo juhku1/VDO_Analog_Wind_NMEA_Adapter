@@ -369,7 +369,7 @@ String buildStatusPage() {
   <!-- NMEA Input 1 -->
   <div style="margin:12px 0; padding:12px; background:#f8f9fa; border-left:4px solid #ffc107; border-radius:3px;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-      <h4 style="margin:0; color:#e67e22;">NMEA Input 1</h4>
+      <h4 style="margin:0; color:#e67e22;">NMEA Input 1 (TCP)</h4>
       <button class="edit-btn" onclick="openEditNMEA1()">Edit</button>
     </div>
     <div style="line-height:1.8;">
@@ -384,7 +384,7 @@ String buildStatusPage() {
   <!-- NMEA Input 2 -->
   <div style="margin:12px 0; padding:12px; background:#f8f9fa; border-left:4px solid #ffc107; border-radius:3px;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-      <h4 style="margin:0; color:#e67e22;">NMEA Input 2</h4>
+      <h4 style="margin:0; color:#e67e22;">NMEA Input 2 (UDP)</h4>
       <button class="edit-btn" onclick="openEditNMEA2()">Edit</button>
     </div>
     <div style="line-height:1.8;">
@@ -581,13 +581,23 @@ async function loadNMEA2Settings() {
 // Save functions
 async function saveWiFiSettings() {
   try {
+    const r = await fetch('/status');
+    const j = await r.json();
     const body = new URLSearchParams({
       wifi_mode: document.querySelector('input[name="wifi_mode"]:checked').value,
       w1_ssid: document.getElementById('w1_ssid').value,
       w1_pass: document.getElementById('w1_pass').value,
       w2_ssid: document.getElementById('w2_ssid').value,
       w2_pass: document.getElementById('w2_pass').value,
-      conn_mode: '0', ap_pass: 'wind12345', p1_name: 'Yachta', p1_proto: 'tcp', p1_host: '192.168.68.145', p1_port: '6666', p2_name: 'OpenPlotter', p2_proto: 'tcp', p2_host: '', p2_port: '10110'
+      ap_pass: j.ap_pass,
+      p1_name: j.p1_name,
+      p1_proto: j.p1_proto,
+      p1_host: j.p1_host,
+      p1_port: j.p1_port,
+      p2_name: j.p2_name,
+      p2_proto: j.p2_proto,
+      p2_host: j.p2_host,
+      p2_port: j.p2_port
     });
     await fetch('/savecfg', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
     await fetch('/reconnect');
@@ -599,9 +609,23 @@ async function saveWiFiSettings() {
 
 async function saveAPSettings() {
   try {
+    const r = await fetch('/status');
+    const j = await r.json();
     const body = new URLSearchParams({
       ap_pass: document.getElementById('ap_pass').value,
-      wifi_mode: '0', conn_mode: '0', w1_ssid: '', w1_pass: '', w2_ssid: '', w2_pass: '', p1_name: 'Yachta', p1_proto: 'tcp', p1_host: '192.168.68.145', p1_port: '6666', p2_name: 'OpenPlotter', p2_proto: 'tcp', p2_host: '', p2_port: '10110'
+      wifi_mode: j.wifi_mode,
+      w1_ssid: j.w1_ssid,
+      w1_pass: j.w1_pass,
+      w2_ssid: j.w2_ssid,
+      w2_pass: j.w2_pass,
+      p1_name: j.p1_name,
+      p1_proto: j.p1_proto,
+      p1_host: j.p1_host,
+      p1_port: j.p1_port,
+      p2_name: j.p2_name,
+      p2_proto: j.p2_proto,
+      p2_host: j.p2_host,
+      p2_port: j.p2_port
     });
     await fetch('/savecfg', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
     await fetch('/reconnect');
@@ -613,12 +637,23 @@ async function saveAPSettings() {
 
 async function saveNMEA1Settings() {
   try {
+    const r = await fetch('/status');
+    const j = await r.json();
     const body = new URLSearchParams({
       p1_name: document.getElementById('p1_name').value,
       p1_proto: document.getElementById('p1_proto').value,
       p1_host: document.getElementById('p1_host').value,
       p1_port: document.getElementById('p1_port').value,
-      wifi_mode: '0', conn_mode: '0', ap_pass: 'wind12345', w1_ssid: '', w1_pass: '', w2_ssid: '', w2_pass: '', p2_name: 'OpenPlotter', p2_proto: 'tcp', p2_host: '', p2_port: '10110'
+      p2_name: j.p2_name,
+      p2_proto: j.p2_proto,
+      p2_host: j.p2_host,
+      p2_port: j.p2_port,
+      wifi_mode: j.wifi_mode,
+      ap_pass: j.ap_pass,
+      w1_ssid: j.w1_ssid,
+      w1_pass: j.w1_pass,
+      w2_ssid: j.w2_ssid,
+      w2_pass: j.w2_pass
     });
     await fetch('/savecfg', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
     showMessage('NMEA Input 1 saved!', 'success');
@@ -629,12 +664,23 @@ async function saveNMEA1Settings() {
 
 async function saveNMEA2Settings() {
   try {
+    const r = await fetch('/status');
+    const j = await r.json();
     const body = new URLSearchParams({
+      p1_name: j.p1_name,
+      p1_proto: j.p1_proto,
+      p1_host: j.p1_host,
+      p1_port: j.p1_port,
       p2_name: document.getElementById('p2_name').value,
       p2_proto: document.getElementById('p2_proto').value,
       p2_host: document.getElementById('p2_host').value,
       p2_port: document.getElementById('p2_port').value,
-      wifi_mode: '0', conn_mode: '0', ap_pass: 'wind12345', w1_ssid: '', w1_pass: '', w2_ssid: '', w2_pass: '', p1_name: 'Yachta', p1_proto: 'tcp', p1_host: '192.168.68.145', p1_port: '6666'
+      wifi_mode: j.wifi_mode,
+      ap_pass: j.ap_pass,
+      w1_ssid: j.w1_ssid,
+      w1_pass: j.w1_pass,
+      w2_ssid: j.w2_ssid,
+      w2_pass: j.w2_pass
     });
     await fetch('/savecfg', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
     showMessage('NMEA Input 2 saved!', 'success');
@@ -667,23 +713,27 @@ function loadStatusData() {
   fetch('/status')
     .then(r => r.json())
     .then(j => {
-      // NMEA Input 1
+      // NMEA Input 1 (TCP)
       document.getElementById('nmea1_name').textContent = j.p1_name || 'Yachta';
       document.getElementById('nmea1_protocol').textContent = (j.p1_proto || 'tcp').toUpperCase();
       document.getElementById('nmea1_host').textContent = j.p1_host || '192.168.68.145';
       document.getElementById('nmea1_port').textContent = j.p1_port || '6666';
+      document.getElementById('nmea1_status').textContent = j.tcp_connected ? '✓ Connected' : '✗ Disconnected';
       
-      // NMEA Input 2
+      // NMEA Input 2 (UDP)
       document.getElementById('nmea2_name').textContent = j.p2_name || 'OpenPlotter';
-      document.getElementById('nmea2_protocol').textContent = (j.p2_proto || 'tcp').toUpperCase();
+      document.getElementById('nmea2_protocol').textContent = (j.p2_proto || 'udp').toUpperCase();
       document.getElementById('nmea2_host').textContent = j.p2_host || '';
       document.getElementById('nmea2_port').textContent = j.p2_port || '10110';
+      document.getElementById('nmea2_status').textContent = j.udp_connected ? '✓ Listening' : '✗ Not listening';
     })
     .catch(e => console.error('Load error:', e));
 }
 
 // Load data when page loads
 window.addEventListener('load', loadStatusData);
+// Auto-refresh status every 2 seconds
+setInterval(loadStatusData, 2000);
 </script>
 )HTML" + buildPageFooter();
 }

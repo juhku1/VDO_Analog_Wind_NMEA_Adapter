@@ -34,10 +34,16 @@ String   nmeaHost  = "192.168.4.1";
 WiFiClient tcpClient;
 uint32_t lastTcpAttempt = 0;
 
-// TCP Connection state (for web display only - set by Core 1)
+// UDP client for OpenPlotter/secondary source
+WiFiUDP udpClient;
+uint32_t lastUdpAttempt = 0;
+
+// Separate connection states for TCP and UDP
 volatile bool tcpConnected = false;
+volatile bool udpConnected = false;
 
 char netBuf[1472];
+char udpBuf[1472];
 char nmeaLineBuf[256] = {0};  // Buffer for accumulating incomplete lines
 size_t nmeaLineBufLen = 0;
 uint32_t lastNmeaDataMs = 0;  // Timestamp of last received NMEA data
@@ -81,28 +87,33 @@ WebServer server(80);
 void nmeaPollTaskFunc(void *pvParameters) {
   Serial.println("NMEA polling task started on Core 1");
   
-  // Wait for WiFi to be ready before attempting TCP connection
-  // This prevents wasting time trying to connect before network is up
+  // Wait for WiFi to be ready before attempting connections
   Serial.println("Waiting for WiFi to be ready...");
   uint32_t wifiWaitStart = millis();
   while ((WiFi.status() != WL_CONNECTED && WiFi.softAPgetStationNum() == 0) && 
          millis() - wifiWaitStart < 30000) {
     vTaskDelay(pdMS_TO_TICKS(100));
   }
-  Serial.println("WiFi ready, starting NMEA polling");
+  Serial.println("WiFi ready, starting NMEA polling (TCP + UDP)");
   
-  // Set TCP client to non-blocking mode - won't freeze WiFi stack
+  // Set TCP client to non-blocking mode
   tcpClient.setTimeout(0);
   
   while(1) {
     if(!freezeNMEA) {
-      // TCP Client mode - use persistent global tcpClient with non-blocking mode
+      // Poll TCP (Profile 1)
       ensureTCPConnected(tcpClient);
       if(tcpClient.connected()) {
         pollTCP(tcpClient);
         tcpConnected = true;
       } else {
         tcpConnected = false;
+      }
+      
+      // Poll UDP (Profile 2)
+      ensureUDPBound();
+      if(udpConnected) {
+        pollUDP();
       }
     }
     vTaskDelay(pdMS_TO_TICKS(5));  // 5ms cycle = 200Hz = responsive for wind direction
@@ -163,35 +174,30 @@ void loadConfig(){
   
   offsetDeg = prefs.getInt("offset", 0);
   
-  // Load connection profile selection (0 or 1)
-  uint8_t connMode = prefs.getUChar("conn_mode", 0);  // Default: Profile 1
+  // Load connection profile selection - DEPRECATED
+  // Both profiles are now always active simultaneously (TCP + UDP)
+  uint8_t connMode = prefs.getUChar("conn_mode", 0);
+  (void)connMode;  // Suppress unused variable warning
   
-  // Load Profile 1 (Yachta - defaults)
+  // Both connections are always active now:
+  // - Profile 1 (TCP): configured host/port
+  // - Profile 2 (UDP): listening on configured port
   String p1_name  = prefs.getString("p1_name", "Yachta");
   uint8_t p1_proto = prefs.getUChar("p1_proto", PROTO_TCP);
   String p1_host  = prefs.getString("p1_host", "192.168.68.145");
   uint16_t p1_port = prefs.getUShort("p1_port", 6666);
   
-  // Load Profile 2 (OpenPlotter - empty defaults)
+  // Load Profile 2 (OpenPlotter - UDP by default, both connections always active)
   String p2_name  = prefs.getString("p2_name", "OpenPlotter");
-  uint8_t p2_proto = prefs.getUChar("p2_proto", PROTO_TCP);
+  uint8_t p2_proto = prefs.getUChar("p2_proto", PROTO_UDP);  // P2 defaults to UDP
   String p2_host  = prefs.getString("p2_host", "");
   uint16_t p2_port = prefs.getUShort("p2_port", 10110);
   
-  // Apply selected profile
-  if (connMode == 1 && p2_host.length() > 0) {
-    // Use Profile 2 (only if host is configured)
-    nmeaProto = p2_proto;
-    nmeaHost = p2_host;
-    nmeaPort = p2_port;
-    connProfileName = p2_name;
-  } else {
-    // Use Profile 1 (default)
-    nmeaProto = p1_proto;
-    nmeaHost = p1_host;
-    nmeaPort = p1_port;
-    connProfileName = p1_name;
-  }
+  // Configure TCP connection (Profile 1) - always active
+  nmeaProto = p1_proto;
+  nmeaHost = p1_host;
+  nmeaPort = p1_port;
+  connProfileName = p1_name;
   
   String s         = prefs.getString("sta_ssid", "");
   String ap        = prefs.getString("ap_pass", AP_PASS);
@@ -229,8 +235,8 @@ void loadConfig(){
   ap.toCharArray(ap_pass, sizeof(ap_pass));
   prefs.end();
   
-  Serial.printf("Network: Profile=%u (%s), Proto=%u, Host='%s', Port=%u\n", 
-    connMode, connProfileName.c_str(), nmeaProto, nmeaHost.c_str(), nmeaPort);
+  Serial.printf("Network: Profile1 (TCP) %s:%u, Profile2 (UDP) port %u\n", 
+    p1_host.c_str(), p1_port, p2_port);
 }
 
 void saveNetworkConfig(const char* ssid, const char* pass) {
@@ -609,6 +615,75 @@ void pollTCP(WiFiClient& client){
 void bindTransport(){
   Serial.printf("TCP stream: %s:%u\n", nmeaHost.c_str(), nmeaPort);
   lastTcpAttempt = 0;  // Attempt connection immediately
+}
+
+void ensureUDPBound() {
+  // UDP connection: check if listening on configured UDP port (Profile 2)
+  if (udpConnected) return;  // Already bound
+  
+  uint32_t now = millis();
+  if (now < lastUdpAttempt) return;  // Don't retry too often
+  lastUdpAttempt = now + 3000;  // Wait 3 seconds between bind attempts
+  
+  // Get Profile 2 (UDP) port from config
+  Preferences p;
+  p.begin("cfg", true);
+  uint16_t udpPort = p.getUShort("p2_port", 10110);
+  p.end();
+  
+  Serial.printf("UDP bind to port %u...\n", udpPort);
+  
+  if (udpClient.begin(udpPort)) {
+    Serial.printf("UDP bound successfully on port %u\n", udpPort);
+    udpConnected = true;
+  } else {
+    Serial.printf("UDP bind failed on port %u\n", udpPort);
+    udpConnected = false;
+  }
+}
+
+void pollUDP() {
+  if (!udpConnected) return;
+  
+  // Reset sentence flags every 5 seconds (same as TCP)
+  if (millis() - lastFlagReset > 5000) {
+    hasMwvR = false;
+    hasMwvT = false;
+    hasVwr = false;
+    hasVwt = false;
+    lastFlagReset = millis();
+  }
+  
+  // Check for incoming UDP packets
+  int packetSize = udpClient.parsePacket();
+  if (packetSize > 0) {
+    // Read UDP packet
+    size_t n = udpClient.read((uint8_t*)udpBuf, sizeof(udpBuf) - 1);
+    if (n > 0) {
+      udpBuf[n] = 0;
+      
+      // Process packet: accumulate into line buffer (same as TCP)
+      for (size_t i = 0; i < n; i++) {
+        char c = udpBuf[i];
+        
+        if (c == '\r' || c == '\n') {
+          // End of line found
+          if (nmeaLineBufLen > 0) {
+            nmeaLineBuf[nmeaLineBufLen] = 0;
+            lastSentenceRaw = String(nmeaLineBuf);
+            lastNmeaDataMs = millis();
+            if (parseNMEALine(nmeaLineBuf)) {
+              setOutputsDeg(0, angleDeg);
+            }
+            nmeaLineBufLen = 0;
+          }
+        } else if (nmeaLineBufLen < sizeof(nmeaLineBuf) - 1) {
+          // Accumulate character
+          nmeaLineBuf[nmeaLineBufLen++] = c;
+        }
+      }
+    }
+  }
 }
 
 /* ========= STA-yhteys ========= */

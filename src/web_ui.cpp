@@ -147,7 +147,7 @@ static void handleGoto(){
   }
   g_srv->send(200,"text/plain",String("angle=")+angleDeg);
 }
-static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, conn_mode, p1_name, p1_proto, p1_host, p1_port, p2_name, p2_proto, p2_host, p2_port, wifi_mode, w1_ssid, w1_pass, w2_ssid, w2_pass
+static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1_host, p1_port, p2_name, p2_proto, p2_host, p2_port, wifi_mode, w1_ssid, w1_pass, w2_ssid, w2_pass
   if (g_srv->method() != HTTP_POST){
     g_srv->send(405, "text/plain", "Method Not Allowed");
     return;
@@ -155,17 +155,12 @@ static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, conn_mode, p1_name, p
   String ssid = g_srv->arg("ssid");
   String pass = g_srv->arg("pass");
   String ap_pass = g_srv->arg("ap_pass");
-  String connModeStr = g_srv->arg("conn_mode");
   String wifiModeStr = g_srv->arg("wifi_mode");
 
   // WiFi settings
   if (ssid.length() > 0 && pass.length() >= 0) {
     saveNetworkConfig(ssid.c_str(), pass.c_str());
   }
-  
-  // Connection profiles
-  uint8_t connMode = connModeStr.toInt();
-  if (connMode > 1) connMode = 0;
 
   // WiFi profiles
   uint8_t wifiMode = wifiModeStr.toInt();
@@ -195,10 +190,9 @@ static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, conn_mode, p1_name, p
   prefs.begin("cfg", false);
   
   if (ap_pass.length() > 7) prefs.putString("ap_pass", ap_pass);
-  prefs.putUChar("conn_mode", connMode);
   prefs.putUChar("wifi_mode", wifiMode);
   
-  // Profile 1
+  // Profile 1 (TCP)
   if (p1_name.length() > 0) prefs.putString("p1_name", p1_name);
   if (p1_proto.length() > 0) {
     uint8_t proto = (p1_proto.equalsIgnoreCase("tcp") ? PROTO_TCP : 
@@ -208,7 +202,7 @@ static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, conn_mode, p1_name, p
   if (p1_host.length() > 0) prefs.putString("p1_host", p1_host);
   if (p1_port.length() > 0) prefs.putUShort("p1_port", (uint16_t)p1_port.toInt());
 
-  // Profile 2
+  // Profile 2 (UDP)
   if (p2_name.length() > 0) prefs.putString("p2_name", p2_name);
   if (p2_proto.length() > 0) {
     uint8_t proto = (p2_proto.equalsIgnoreCase("tcp") ? PROTO_TCP : 
@@ -299,12 +293,13 @@ static void handleStatus(){
   j += ",\"p1_port\":"; j += prefs.getUShort("p1_port", 6666);
   j += ",\"p2_name\":\""; j += prefs.getString("p2_name", "OpenPlotter"); j += "\"";
   j += ",\"p2_proto\":\"";
-  uint8_t proto2 = prefs.getUChar("p2_proto", PROTO_TCP);
+  uint8_t proto2 = prefs.getUChar("p2_proto", PROTO_UDP);  // P2 defaults to UDP
   j += (proto2==PROTO_TCP?"tcp":proto2==PROTO_HTTP?"http":"udp");
   j += "\"";
   j += ",\"p2_host\":\""; j += prefs.getString("p2_host", ""); j += "\"";
   j += ",\"p2_port\":"; j += prefs.getUShort("p2_port", 10110);
   j += ",\"tcp_connected\":"; j += (tcpConnected?"true":"false");
+  j += ",\"udp_connected\":"; j += (udpConnected?"true":"false");
   j += ",\"sta_ip\":\"";   j += WiFi.localIP().toString(); j += "\"";
   j += ",\"sta_ssid\":\""; j += staSsidEsc; j += "\"";
   j += ",\"sta_connected\":"; j += (WiFi.status() == WL_CONNECTED ? "true" : "false");
