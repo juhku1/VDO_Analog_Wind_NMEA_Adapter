@@ -125,9 +125,6 @@ footer {
   <a href="/"        class=")HTML";
   html += (activeTab == "status") ? "active" : "";
   html += R"HTML(">Status</a>
-  <a href="/network" class=")HTML";
-  html += (activeTab == "network") ? "active" : "";
-  html += R"HTML(">Network</a>
   <a href="/display1" class=")HTML";
   html += (activeTab == "display1") ? "active" : "";
   html += R"HTML(">Display 1</a>
@@ -397,16 +394,6 @@ String buildStatusPage() {
       <div><strong>Port:</strong> <span id="nmea2_port">loading...</span></div>
       <div><strong>Status:</strong> <span id="nmea2_status">loading...</span></div>
     </div>
-  </div>
-</fieldset>
-
-<!-- Quick Actions -->
-<fieldset>
-  <legend>Quick Actions</legend>
-  <div class=row>
-    <button onclick="window.location.href='/display1'">Configure Display 1</button>
-    <button onclick="window.location.href='/display2'">Configure Display 2</button>
-    <button onclick="window.location.href='/display3'">Configure Display 3</button>
   </div>
 </fieldset>
 
