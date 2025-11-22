@@ -57,7 +57,7 @@ String getDisplaysUsing(uint8_t dataType) {
   return count > 0 ? result : "-";
 }
 
-// Build data flow table HTML
+// Build data flow table HTML (static structure)
 String buildDataFlowTable() {
   String html = R"HTML(
 <fieldset>
@@ -76,69 +76,12 @@ String buildDataFlowTable() {
         <th>Used By</th>
       </tr>
     </thead>
-    <tbody>
-)HTML";
-
-  // Apparent Wind
-  if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-    html += "<tr>";
-    html += "<td><strong>Apparent Wind</strong></td>";
-    html += "<td>" + String(apparent_hasData ? apparent_speed_kn : 0.0, 1) + " kn</td>";
-    html += "<td>" + String(apparent_hasData ? (int)apparent_angle_deg : 0) + "°</td>";
-    html += "<td>" + String(apparent_source) + "</td>";
-    html += "<td>" + formatTimeAgo(apparent_lastUpdate_ms) + "</td>";
-    html += "<td>" + getDisplaysUsing(DATA_APPARENT_WIND) + "</td>";
-    html += "</tr>";
-    
-    // True Wind
-    html += "<tr>";
-    html += "<td><strong>True Wind</strong></td>";
-    html += "<td>" + String(true_hasData ? true_speed_kn : 0.0, 1) + " kn</td>";
-    html += "<td>" + String(true_hasData ? (int)true_angle_deg : 0) + "°</td>";
-    html += "<td>" + String(true_source) + "</td>";
-    html += "<td>" + formatTimeAgo(true_lastUpdate_ms) + "</td>";
-    html += "<td>" + getDisplaysUsing(DATA_TRUE_WIND) + "</td>";
-    html += "</tr>";
-    
-    // VMG
-    html += "<tr>";
-    html += "<td><strong>VMG</strong></td>";
-    html += "<td>" + String(vmg_hasData ? vmg_kn : 0.0, 1) + " kn</td>";
-    html += "<td>-</td>";
-    html += "<td>Calculated</td>";
-    html += "<td>" + formatTimeAgo(vmg_lastUpdate_ms) + "</td>";
-    html += "<td>" + getDisplaysUsing(DATA_VMG) + "</td>";
-    html += "</tr>";
-    
-    // SOG
-    html += "<tr>";
-    html += "<td><strong>Speed Over Ground</strong></td>";
-    html += "<td>" + String(gps_hasSOG ? gps_sog_kn : 0.0, 1) + " kn</td>";
-    html += "<td>-</td>";
-    html += "<td>GPS (RMC/VTG)</td>";
-    html += "<td>" + formatTimeAgo(gps_lastUpdate_ms) + "</td>";
-    html += "<td>" + getDisplaysUsing(DATA_SOG) + "</td>";
-    html += "</tr>";
-    
-    // COG
-    html += "<tr>";
-    html += "<td><strong>Course Over Ground</strong></td>";
-    html += "<td>-</td>";
-    html += "<td>" + String(gps_hasCOG ? (int)gps_cog_deg : 0) + "°</td>";
-    html += "<td>GPS (RMC/VTG)</td>";
-    html += "<td>" + formatTimeAgo(gps_lastUpdate_ms) + "</td>";
-    html += "<td>" + getDisplaysUsing(DATA_COG) + "</td>";
-    html += "</tr>";
-    
-    xSemaphoreGive(dataMutex);
-  }
-  
-  html += R"HTML(
+    <tbody id="dataFlowTableBody">
+      <tr><td colspan="6" style="text-align:center; color:#999;">Loading...</td></tr>
     </tbody>
   </table>
 </fieldset>
 )HTML";
-
   return html;
 }
 
@@ -397,6 +340,86 @@ async function refresh(){
         const dataActive = dataAge < 5000;
         nmeaStatusEl.textContent = dataActive ? "Active (data flowing)" : "Ready for data";
         nmeaStatusEl.style.color = dataActive ? "#28a745" : "#ffc107";
+      }
+    }
+    
+    // Update data flow table if it exists
+    const dataFlowTableBody = document.getElementById('dataFlowTableBody');
+    if (dataFlowTableBody) {
+      try {
+        const dfr = await fetch('/api/dataflow');
+        const df = await dfr.json();
+        
+        // Helper: Format time ago
+        function formatTimeAgo(age_ms) {
+          if (age_ms > 999999) return "-";
+          if (age_ms < 1000) return "Just now";
+          if (age_ms < 60000) return Math.floor(age_ms / 1000) + "s ago";
+          if (age_ms < 3600000) return Math.floor(age_ms / 60000) + "m ago";
+          return Math.floor(age_ms / 3600000) + "h ago";
+        }
+        
+        // Helper: Format displays
+        function formatDisplays(displays) {
+          if (!displays || displays.length === 0) return "-";
+          return displays.map(d => "Display " + d).join(", ");
+        }
+        
+        let html = "";
+        
+        // Apparent Wind
+        html += "<tr>";
+        html += "<td><strong>Apparent Wind</strong></td>";
+        html += "<td>" + df.apparent.speed + " kn</td>";
+        html += "<td>" + df.apparent.angle + "°</td>";
+        html += "<td>" + df.apparent.source + "</td>";
+        html += "<td>" + formatTimeAgo(df.apparent.age) + "</td>";
+        html += "<td>" + formatDisplays(df.apparent.displays) + "</td>";
+        html += "</tr>";
+        
+        // True Wind
+        html += "<tr>";
+        html += "<td><strong>True Wind</strong></td>";
+        html += "<td>" + df.true.speed + " kn</td>";
+        html += "<td>" + df.true.angle + "°</td>";
+        html += "<td>" + df.true.source + "</td>";
+        html += "<td>" + formatTimeAgo(df.true.age) + "</td>";
+        html += "<td>" + formatDisplays(df.true.displays) + "</td>";
+        html += "</tr>";
+        
+        // VMG
+        html += "<tr>";
+        html += "<td><strong>VMG</strong></td>";
+        html += "<td>" + df.vmg.speed + " kn</td>";
+        html += "<td>-</td>";
+        html += "<td>" + df.vmg.source + "</td>";
+        html += "<td>" + formatTimeAgo(df.vmg.age) + "</td>";
+        html += "<td>" + formatDisplays(df.vmg.displays) + "</td>";
+        html += "</tr>";
+        
+        // SOG
+        html += "<tr>";
+        html += "<td><strong>Speed Over Ground</strong></td>";
+        html += "<td>" + df.sog.speed + " kn</td>";
+        html += "<td>-</td>";
+        html += "<td>" + df.sog.source + "</td>";
+        html += "<td>" + formatTimeAgo(df.sog.age) + "</td>";
+        html += "<td>" + formatDisplays(df.sog.displays) + "</td>";
+        html += "</tr>";
+        
+        // COG
+        html += "<tr>";
+        html += "<td><strong>Course Over Ground</strong></td>";
+        html += "<td>-</td>";
+        html += "<td>" + df.cog.angle + "°</td>";
+        html += "<td>" + df.cog.source + "</td>";
+        html += "<td>" + formatTimeAgo(df.cog.age) + "</td>";
+        html += "<td>" + formatDisplays(df.cog.displays) + "</td>";
+        html += "</tr>";
+        
+        dataFlowTableBody.innerHTML = html;
+      } catch(e) {
+        // Ignore data flow errors
       }
     }
   }catch(e){}

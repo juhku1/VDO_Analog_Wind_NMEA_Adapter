@@ -408,6 +408,81 @@ static void handleStatus(){
   g_srv->send(200, "application/json", j);
 }
 
+// Helper: Check which displays use this data type
+static String getDisplaysUsingJSON(uint8_t dataType) {
+  String result = "[";
+  int count = 0;
+  
+  for (int i = 0; i < 3; i++) {
+    if (displays[i].enabled && displays[i].dataType == dataType) {
+      if (count > 0) result += ",";
+      result += String(i + 1);
+      count++;
+    }
+  }
+  result += "]";
+  return result;
+}
+
+// API: Data flow overview
+static void handleDataFlow() {
+  String j;
+  j.reserve(800);
+  
+  if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    uint32_t now = millis();
+    
+    j += "{";
+    j += "\"apparent\":{";
+    j += "\"speed\":"; j += apparent_hasData ? String(apparent_speed_kn, 1) : "0";
+    j += ",\"angle\":"; j += apparent_hasData ? String((int)apparent_angle_deg) : "0";
+    j += ",\"source\":\""; j += apparent_source; j += "\"";
+    j += ",\"age\":"; j += apparent_hasData ? String(now - apparent_lastUpdate_ms) : "999999";
+    j += ",\"displays\":"; j += getDisplaysUsingJSON(DATA_APPARENT_WIND);
+    j += "}";
+    
+    j += ",\"true\":{";
+    j += "\"speed\":"; j += true_hasData ? String(true_speed_kn, 1) : "0";
+    j += ",\"angle\":"; j += true_hasData ? String((int)true_angle_deg) : "0";
+    j += ",\"source\":\""; j += true_source; j += "\"";
+    j += ",\"age\":"; j += true_hasData ? String(now - true_lastUpdate_ms) : "999999";
+    j += ",\"displays\":"; j += getDisplaysUsingJSON(DATA_TRUE_WIND);
+    j += "}";
+    
+    j += ",\"vmg\":{";
+    j += "\"speed\":"; j += vmg_hasData ? String(vmg_kn, 1) : "0";
+    j += ",\"angle\":0";
+    j += ",\"source\":\"Calculated\"";
+    j += ",\"age\":"; j += vmg_hasData ? String(now - vmg_lastUpdate_ms) : "999999";
+    j += ",\"displays\":"; j += getDisplaysUsingJSON(DATA_VMG);
+    j += "}";
+    
+    j += ",\"sog\":{";
+    j += "\"speed\":"; j += gps_hasSOG ? String(gps_sog_kn, 1) : "0";
+    j += ",\"angle\":0";
+    j += ",\"source\":\"GPS (RMC/VTG)\"";
+    j += ",\"age\":"; j += gps_hasSOG ? String(now - gps_lastUpdate_ms) : "999999";
+    j += ",\"displays\":"; j += getDisplaysUsingJSON(DATA_SOG);
+    j += "}";
+    
+    j += ",\"cog\":{";
+    j += "\"speed\":0";
+    j += ",\"angle\":"; j += gps_hasCOG ? String((int)gps_cog_deg) : "0";
+    j += ",\"source\":\"GPS (RMC/VTG)\"";
+    j += ",\"age\":"; j += gps_hasCOG ? String(now - gps_lastUpdate_ms) : "999999";
+    j += ",\"displays\":"; j += getDisplaysUsingJSON(DATA_COG);
+    j += "}";
+    
+    j += "}";
+    
+    xSemaphoreGive(dataMutex);
+  } else {
+    j = "{\"error\":\"mutex timeout\"}";
+  }
+  
+  g_srv->send(200, "application/json", j);
+}
+
 void setupWebUI(WebServer& server){
   g_srv = &server;
   
@@ -436,6 +511,7 @@ void setupWebUI(WebServer& server){
   server.on("/reconnect",   HTTP_GET,  handleReconnect);
   server.on("/reconnecttcp",HTTP_GET,  handleReconnectTCP);
   server.on("/status",      HTTP_GET,  handleStatus);
+  server.on("/api/dataflow", HTTP_GET,  handleDataFlow);
   
   // Legacy display2 endpoints
   server.on("/display2enabled", HTTP_GET, [](void){
