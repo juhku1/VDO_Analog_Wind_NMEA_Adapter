@@ -211,7 +211,7 @@ static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1
   vTaskDelay(pdMS_TO_TICKS(150));  // Wait for nmeaPollTask to pause
   
   // Save to NVS
-  prefs.begin("cfg", false);
+  prefs.begin(NVS_NAMESPACE, false);
   
   
   if (ap_pass.length() > 7) prefs.putString("ap_pass", ap_pass);

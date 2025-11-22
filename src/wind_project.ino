@@ -10,6 +10,30 @@
 #define LEDC_TIMER_RESOLUTION    10
 #define LEDC_BASE_FREQ           5000
 
+/* ========= Constants ========= */
+
+// NVS (Non-Volatile Storage) keys
+constexpr const char* NVS_KEY_DISPLAY_ENABLED = "d%d_enabled";
+constexpr const char* NVS_KEY_DISPLAY_TYPE = "d%d_type";
+constexpr const char* NVS_KEY_DISPLAY_DATATYPE = "d%d_dataType";
+constexpr const char* NVS_KEY_DISPLAY_OFFSET = "d%d_offset";
+constexpr const char* NVS_KEY_DISPLAY_SUMLOGK = "d%d_sumlogK";
+constexpr const char* NVS_KEY_DISPLAY_FMAX = "d%d_sumlogFmax";
+constexpr const char* NVS_KEY_DISPLAY_DUTY = "d%d_pulseDuty";
+constexpr const char* NVS_KEY_DISPLAY_PIN = "d%d_pulsePin";
+constexpr const char* NVS_KEY_DISPLAY_GOTO = "d%d_gotoAngle";
+
+// DAC voltage constants (millivolts)
+constexpr int DAC_VMIN = 2000;      // Minimum voltage (2.0V)
+constexpr int DAC_VCEN = 4000;      // Center voltage (4.0V)
+constexpr int DAC_VAMP_BASE = 2000; // Base amplitude (2.0V)
+constexpr int DAC_VMAX = 6000;      // Maximum voltage (6.0V)
+
+// Timing constants (milliseconds)
+constexpr uint32_t DATA_TIMEOUT_MS = 4000;  // Data considered stale after 4s
+constexpr uint32_t GPS_TIMEOUT_MS = 5000;   // GPS data timeout
+constexpr uint32_t SENTENCE_WINDOW_MS = 5000; // Sentence type tracking window
+
 /* ========= Global Settings and Variables ========= */
 
 // FreeRTOS synchronization primitives for thread safety
@@ -99,9 +123,8 @@ volatile bool pauseNmeaPoll = false;
 
 DFRobot_GP8403 dac(&Wire, I2C_ADDR);
 
-const uint8_t CH_SIN = 0;
-const uint8_t CH_COS = 1;
-const int VMIN = 2000, VCEN = 4000, VAMP_BASE = 2000, VMAX = 6000;
+constexpr uint8_t CH_SIN = 0;
+constexpr uint8_t CH_COS = 1;
 
 int offsetDeg = 0;
 char connProfileName[64] = "Yachta";
@@ -166,7 +189,7 @@ void nmeaPollTaskFunc(void *pvParameters) {
 /* ========= Asetusten tallennus ========= */
 void saveDisplayConfig(int displayNum = -1) {
   xSemaphoreTake(nvsMutex, portMAX_DELAY);
-  prefs.begin("cfg", false);
+  prefs.begin(NVS_NAMESPACE, false);
   
   if (displayNum == -1) {
     // Save all displays
@@ -225,7 +248,7 @@ void saveDisplayConfig(int displayNum = -1) {
 }
 
 void loadConfig(){
-  prefs.begin("cfg", false);
+  prefs.begin(NVS_NAMESPACE, false);
   
   // Initialize displays with defaults
   for (int i = 0; i < 3; i++) {
@@ -351,7 +374,7 @@ void loadConfig(){
 
 void saveNetworkConfig(const char* ssid, const char* pass) {
   if (!ssid || ssid[0] == '\0') return;  // älä kirjoita tyhjää
-  prefs.begin("cfg", false);              // sama namespace kuin loadConfig()
+  prefs.begin(NVS_NAMESPACE, false);              // sama namespace kuin loadConfig()
   
   // Tallenna SSID
   prefs.putString("sta_ssid", ssid);
@@ -377,7 +400,7 @@ void saveNetworkConfig(const char* ssid, const char* pass) {
 
 /* ========= DAC ulostulo ========= */
 static inline int wrap360(int d){ d%=360; if(d<0) d+=360; return d; }
-static inline int mvClamp(int mv){ if(mv<VMIN) return VMIN; if(mv>VMAX) return VMAX; return mv; }
+static inline int mvClamp(int mv){ if(mv<DAC_VMIN) return DAC_VMIN; if(mv>DAC_VMAX) return DAC_VMAX; return mv; }
 
 void setOutputsDeg(int displayNum, int deg){
   if (displayNum < 0 || displayNum >= 3) return;
@@ -391,9 +414,9 @@ void setOutputsDeg(int displayNum, int deg){
   int adj = wrap360(displayAngle + displays[displayNum].offsetDeg);
   float r = adj * DEG_TO_RAD;
   float s = sinf(r), c = cosf(r);
-  float amp = VAMP_BASE;
-  int sin_mV = mvClamp(VCEN + (int)lroundf(amp * s));
-  int cos_mV = mvClamp(VCEN + (int)lroundf(amp * c));
+  float amp = DAC_VAMP_BASE;
+  int sin_mV = mvClamp(DAC_VCEN + (int)lroundf(amp * s));
+  int cos_mV = mvClamp(DAC_VCEN + (int)lroundf(amp * c));
   
   // Only update DAC for display 0 (primary display)
   if (displayNum == 0) {

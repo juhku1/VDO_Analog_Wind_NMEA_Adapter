@@ -3,6 +3,9 @@
 #include <Preferences.h>
 #include <WiFi.h>
 
+// Constants
+inline constexpr const char* NVS_NAMESPACE = "cfg";
+
 // Enum protokollille
 enum { PROTO_UDP = 0, PROTO_TCP = 1, PROTO_HTTP = 2 };
 
