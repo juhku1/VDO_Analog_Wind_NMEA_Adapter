@@ -6,6 +6,23 @@
 // Constants
 inline constexpr const char* NVS_NAMESPACE = "cfg";
 
+// DAC voltage constants (millivolts)
+constexpr int DAC_VMIN = 2000;      // Minimum voltage (2.0V)
+constexpr int DAC_VCEN = 4000;      // Center voltage (4.0V)
+constexpr int DAC_VAMP_BASE = 2000; // Base amplitude (2.0V)
+constexpr int DAC_VMAX = 6000;      // Maximum voltage (6.0V)
+
+// Timing constants (milliseconds)
+constexpr uint32_t DATA_TIMEOUT_MS = 4000;  // Data considered stale after 4s
+
+// LEDC constants
+#define LEDC_TIMER_RESOLUTION    10
+#define LEDC_BASE_FREQ           5000
+
+// DAC channels
+constexpr uint8_t CH_SIN = 0;
+constexpr uint8_t CH_COS = 1;
+
 // Enum protokollille
 enum { PROTO_UDP = 0, PROTO_TCP = 1, PROTO_HTTP = 2 };
 
