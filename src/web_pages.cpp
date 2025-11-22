@@ -10,6 +10,8 @@ const char* getDataTypeName(uint8_t dataType) {
     case DATA_TRUE_WIND: return "True Wind";
     case DATA_VMG: return "VMG";
     case DATA_GROUND_WIND: return "Ground Wind";
+    case DATA_SOG: return "Speed Over Ground";
+    case DATA_COG: return "Course Over Ground";
     default: return "Unknown";
   }
 }
@@ -20,6 +22,8 @@ const char* getDataTypeDescription(uint8_t dataType) {
     case DATA_TRUE_WIND: return "True wind (from MWV T, VWT, or calculated from Apparent + GPS)";
     case DATA_VMG: return "Velocity Made Good (from GPS)";
     case DATA_GROUND_WIND: return "Wind relative to ground (future)";
+    case DATA_SOG: return "Boat speed from GPS (knots)";
+    case DATA_COG: return "Boat heading from GPS (degrees)";
     default: return "";
   }
 }
@@ -1228,8 +1232,10 @@ String buildDisplayPage(int displayNum) {
       <option value="0">Apparent Wind</option>
       <option value="1">True Wind</option>
       <option value="2">VMG (Velocity Made Good)</option>
+      <option value="4">SOG (Speed Over Ground)</option>
+      <option value="5">COG (Course Over Ground)</option>
     </select>
-    <span class="info-icon" data-tooltip="Apparent Wind: Wind relative to boat. True Wind: Calculated or from NMEA. VMG: Speed from GPS">i</span>
+    <span class="info-icon" data-tooltip="Apparent Wind: Wind relative to boat. True Wind: Calculated or from NMEA. VMG: Speed toward wind. SOG: GPS speed. COG: GPS heading">i</span>
   </div>
 </fieldset>
 

@@ -644,6 +644,26 @@ void updateDisplaysForSentence(const char* sentenceType, char reference, int ang
     xSemaphoreGive(dataMutex);
   }
   
+  // Update SOG/COG for displays that need it
+  xSemaphoreTake(dataMutex, portMAX_DELAY);
+  if (gps_hasSOG || gps_hasCOG) {
+    for (int i = 0; i < 3; i++) {
+      if (!displays[i].enabled) continue;
+      
+      if (displays[i].dataType == DATA_SOG && gps_hasSOG) {
+        displays[i].windSpeed_kn = gps_sog_kn;
+        displays[i].windAngle_deg = 0; // SOG has no angle
+        displays[i].lastUpdate_ms = now;
+      }
+      else if (displays[i].dataType == DATA_COG && gps_hasCOG) {
+        displays[i].windSpeed_kn = 0; // COG is angle only
+        displays[i].windAngle_deg = (int)gps_cog_deg;
+        displays[i].lastUpdate_ms = now;
+      }
+    }
+  }
+  xSemaphoreGive(dataMutex);
+  
   // Update pulse outputs for all active displays
   updateAllDisplayPulses();
 }

@@ -10,8 +10,10 @@ enum { PROTO_UDP = 0, PROTO_TCP = 1, PROTO_HTTP = 2 };
 enum WindDataType {
   DATA_APPARENT_WIND = 0,  // Apparent Wind (näennäistuuli) - from MWV(R) or VWR
   DATA_TRUE_WIND = 1,      // True Wind (todellinen tuuli) - from MWV(T) or VWT
-  DATA_VMG = 2,            // Velocity Made Good (future)
-  DATA_GROUND_WIND = 3     // Ground Wind (future)
+  DATA_VMG = 2,            // Velocity Made Good
+  DATA_GROUND_WIND = 3,    // Ground Wind (future)
+  DATA_SOG = 4,            // Speed Over Ground - from GPS (RMC/VTG)
+  DATA_COG = 5             // Course Over Ground - from GPS (RMC/VTG)
 };
 
 // Display configuration structure
