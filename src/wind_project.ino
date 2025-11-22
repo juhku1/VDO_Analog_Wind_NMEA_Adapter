@@ -361,35 +361,32 @@ void updateDisplayPulse(int displayNum) {
   
   DisplayConfig &disp = displays[displayNum];
   
+  // Read speed with mutex protection
+  float currentSpeed;
+  xSemaphoreTake(dataMutex, portMAX_DELAY);
+  currentSpeed = sumlog_speed_kn;
+  xSemaphoreGive(dataMutex);
+  
   // Check for data timeout (4 seconds without NMEA data)
   uint32_t dataAge = millis() - lastNmeaDataMs;
   if (dataAge > 4000) {
-    // Data is stale - zero out speed and direction
-    if (sumlog_speed_kn > 0.0f) {
+    currentSpeed = 0.0f;
+    if (lastFreq[displayNum] != 0) {
       Serial.printf("Data timeout! Last NMEA data %u ms ago - zeroing speed\n", dataAge);
-      sumlog_speed_kn = 0.0f;
-    }
-    if (angleDeg != 0) {
-      Serial.printf("Data timeout! Last NMEA data %u ms ago - zeroing direction\n", dataAge);
-      angleDeg = 0;
     }
   }
   
-  if (disp.type == "sumlog") {
-    // Stop immediately if raw speed is 0 (propeller stopped) - don't wait for filter
-    if (sumlog_speed_kn < 0.01f && lastFreq[displayNum] != 0) {
+  if (strcmp(disp.type, "sumlog") == 0) {
+    // Stop immediately if raw speed is 0
+    if (currentSpeed < 0.01f && lastFreq[displayNum] != 0) {
       ledcWrite(LEDC_CHANNELS[displayNum], 0);
       lastFreq[displayNum] = 0;
       Serial.printf("Display %d stopped (speed=0)\n", displayNum);
       return;
     }
     
-    // Use raw speed directly without filtering - for testing
-    // speedFilter[displayNum] = speedFilter[displayNum] * disp.speedFilterAlpha + 
-    //                           sumlog_speed_kn * (1.0f - disp.speedFilterAlpha);
-    
-    // Sumlog pulse calculation with raw speed (no filtering)
-    float freq = sumlog_speed_kn * disp.sumlogK;
+    // Sumlog pulse calculation
+    float freq = currentSpeed * disp.sumlogK;
     if (freq > (float)disp.sumlogFmax) freq = (float)disp.sumlogFmax;
     
     if (freq < 0.01f) {
@@ -419,25 +416,21 @@ void updateDisplayPulse(int displayNum) {
           ledcWrite(LEDC_CHANNELS[displayNum], duty);
           
           lastFreq[displayNum] = freqInt;
-          Serial.printf("Display %d freq=%uHz (speed=%.1f kn)\n", displayNum, freqInt, sumlog_speed_kn);
+          Serial.printf("Display %d freq=%uHz (speed=%.1f kn)\n", displayNum, freqInt, currentSpeed);
         }
       }
     }
-  } else if (disp.type == "logicwind") {
-    // Stop immediately if raw speed is 0 (propeller stopped) - don't wait for filter
-    if (sumlog_speed_kn < 0.01f && lastFreq[displayNum] != 0) {
+  } else if (strcmp(disp.type, "logicwind") == 0) {
+    // Stop immediately if raw speed is 0
+    if (currentSpeed < 0.01f && lastFreq[displayNum] != 0) {
       ledcWrite(LEDC_CHANNELS[displayNum], 0);
       lastFreq[displayNum] = 0;
       Serial.printf("Display %d Logic Wind stopped (speed=0)\n", displayNum);
       return;
     }
     
-    // Use raw speed directly without filtering - for testing
-    // speedFilter[displayNum] = speedFilter[displayNum] * disp.speedFilterAlpha + 
-    //                           sumlog_speed_kn * (1.0f - disp.speedFilterAlpha);
-    
-    // Logic Wind pulse calculation with raw speed (no filtering)
-    float freq = sumlog_speed_kn * disp.sumlogK;
+    // Logic Wind pulse calculation
+    float freq = currentSpeed * disp.sumlogK;
     if (freq > (float)disp.sumlogFmax) freq = (float)disp.sumlogFmax;
     
     if (freq < 0.01f) {
@@ -467,7 +460,7 @@ void updateDisplayPulse(int displayNum) {
           ledcWrite(LEDC_CHANNELS[displayNum], duty);
           
           lastFreq[displayNum] = freqInt;
-          Serial.printf("Display %d Logic Wind freq=%uHz (speed=%.1f kn)\n", displayNum, freqInt, sumlog_speed_kn);
+          Serial.printf("Display %d Logic Wind freq=%uHz (speed=%.1f kn)\n", displayNum, freqInt, currentSpeed);
         }
       }
     }
@@ -525,19 +518,23 @@ bool parseMWV(char* line){
   if(!(ang>=0 && ang<=360)) return false;
   
   int newAngle = wrap360((int)lroundf(ang));
-  float newSpeed = sumlog_speed_kn;
+  float newSpeed = 0.0f;
+  bool hasSpeed = false;
   
   if(n>=4) {
     float spd = atof(f[3]);
     if(spd>=0 && spd<200) {
       newSpeed = spd;
+      hasSpeed = true;
     }
   }
   
   // Update shared data with mutex protection
   xSemaphoreTake(dataMutex, portMAX_DELAY);
   angleDeg = newAngle;
-  sumlog_speed_kn = newSpeed;
+  if (hasSpeed) {
+    sumlog_speed_kn = newSpeed;
+  }
   snprintf(lastSentenceType, sizeof(lastSentenceType), "MWV(%c)", ref);
   xSemaphoreGive(dataMutex);
   
@@ -556,19 +553,23 @@ bool parseVWR(char* line){
   if(!(ang>=0 && ang<=180)) return false;
   int awa = (int)lroundf(ang);
   int newAngle = (side=='L') ? wrap360(360-awa) : awa;
-  float newSpeed = sumlog_speed_kn;
+  float newSpeed = 0.0f;
+  bool hasSpeed = false;
   
   if(n>=4) {
     float spd = atof(f[3]);
     if(spd>=0 && spd<200) {
       newSpeed = spd;
+      hasSpeed = true;
     }
   }
   
   // Update shared data with mutex protection
   xSemaphoreTake(dataMutex, portMAX_DELAY);
   angleDeg = newAngle;
-  sumlog_speed_kn = newSpeed;
+  if (hasSpeed) {
+    sumlog_speed_kn = newSpeed;
+  }
   strncpy(lastSentenceType, "VWR", sizeof(lastSentenceType) - 1);
   lastSentenceType[sizeof(lastSentenceType) - 1] = '\0';
   xSemaphoreGive(dataMutex);
@@ -586,19 +587,23 @@ bool parseVWT(char* line){
   if(!(ang>=0 && ang<=180)) return false;
   int awa = (int)lroundf(ang);
   int newAngle = (side=='L') ? wrap360(360-awa) : awa;
-  float newSpeed = sumlog_speed_kn;
+  float newSpeed = 0.0f;
+  bool hasSpeed = false;
   
   if(n>=4) {
     float spd = atof(f[3]);
     if(spd>=0 && spd<200) {
       newSpeed = spd;
+      hasSpeed = true;
     }
   }
   
   // Update shared data with mutex protection
   xSemaphoreTake(dataMutex, portMAX_DELAY);
   angleDeg = newAngle;
-  sumlog_speed_kn = newSpeed;
+  if (hasSpeed) {
+    sumlog_speed_kn = newSpeed;
+  }
   strncpy(lastSentenceType, "VWT", sizeof(lastSentenceType) - 1);
   lastSentenceType[sizeof(lastSentenceType) - 1] = '\0';
   xSemaphoreGive(dataMutex);
