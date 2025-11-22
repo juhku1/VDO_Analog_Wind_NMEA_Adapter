@@ -162,10 +162,6 @@ static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1
     saveNetworkConfig(ssid.c_str(), pass.c_str());
   }
 
-  // WiFi profiles
-  uint8_t wifiMode = wifiModeStr.toInt();
-  if (wifiMode > 1) wifiMode = 0;
-
   // Profile 1
   String p1_name = g_srv->arg("p1_name");
   String p1_proto = g_srv->arg("p1_proto");
@@ -178,19 +174,21 @@ static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1
   String p2_host = g_srv->arg("p2_host");
   String p2_port = g_srv->arg("p2_port");
 
-  // WiFi Profile 1
+  // WiFi Settings (single profile only)
   String w1_ssid = g_srv->arg("w1_ssid");
   String w1_pass = g_srv->arg("w1_pass");
 
-  // WiFi Profile 2
-  String w2_ssid = g_srv->arg("w2_ssid");
-  String w2_pass = g_srv->arg("w2_pass");
-
+  // Pause NMEA polling task to prevent race condition
+  extern volatile bool pauseNmeaPoll;
+  pauseNmeaPoll = true;
+  vTaskDelay(pdMS_TO_TICKS(150));  // Wait for nmeaPollTask to pause
+  
   // Save to NVS
   prefs.begin("cfg", false);
   
+  
   if (ap_pass.length() > 7) prefs.putString("ap_pass", ap_pass);
-  prefs.putUChar("wifi_mode", wifiMode);
+  prefs.putUChar("wifi_mode", wifiModeStr.toInt());
   
   // Profile 1 (TCP)
   if (p1_name.length() > 0) prefs.putString("p1_name", p1_name);
@@ -212,15 +210,35 @@ static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1
   if (p2_host.length() > 0) prefs.putString("p2_host", p2_host);
   if (p2_port.length() > 0) prefs.putUShort("p2_port", (uint16_t)p2_port.toInt());
 
-  // WiFi Profile 1
+  // WiFi Settings (single profile only)
   if (w1_ssid.length() > 0) prefs.putString("w1_ssid", w1_ssid);
   if (w1_pass.length() > 0) prefs.putString("w1_pass", w1_pass);
 
-  // WiFi Profile 2
-  if (w2_ssid.length() > 0) prefs.putString("w2_ssid", w2_ssid);
-  if (w2_pass.length() > 0) prefs.putString("w2_pass", w2_pass);
+  // Add to connection history if P1 changed
+  if (p1_host.length() > 0 && p1_port.length() > 0) {
+    String historyEntry = p1_host + ":" + p1_port;
+    String existing = prefs.getString("history_0", "");
+    
+    // Only add if different from current history_0
+    if (existing != historyEntry) {
+      // Shift history down: 3->4, 2->3, 1->2, 0->1, new->0
+      for (int i = 3; i >= 0; i--) {
+        String key = "history_" + String(i);
+        String nextKey = "history_" + String(i + 1);
+        String val = prefs.getString(key.c_str(), "");
+        if (val.length() > 0) {
+          prefs.putString(nextKey.c_str(), val);
+        }
+      }
+      prefs.putString("history_0", historyEntry);
+    }
+  }
 
   prefs.end();
+  
+  // Resume NMEA polling
+  pauseNmeaPoll = false;
+  Serial.println("[handleSaveCfg] NMEA polling resumed");
 
   // Reload configuration
   loadConfig();
@@ -289,15 +307,54 @@ static void handleStatus(){
   uint8_t proto1 = prefs.getUChar("p1_proto", PROTO_TCP);
   j += (proto1==PROTO_TCP?"tcp":proto1==PROTO_HTTP?"http":"udp");
   j += "\"";
-  j += ",\"p1_host\":\""; j += prefs.getString("p1_host", "192.168.68.145"); j += "\"";
-  j += ",\"p1_port\":"; j += prefs.getUShort("p1_port", 6666);
+  // Show CURRENT values if P1 is active, otherwise show stored values
+  uint8_t activeProfile = prefs.getUChar("conn_mode", 0);
+  if (activeProfile == 0) {
+    j += ",\"p1_host\":\""; j += nmeaHost; j += "\"";
+    j += ",\"p1_port\":"; j += nmeaPort;
+  } else {
+    j += ",\"p1_host\":\""; j += prefs.getString("p1_host", "192.168.68.145"); j += "\"";
+    j += ",\"p1_port\":"; j += prefs.getUShort("p1_port", 6666);
+  }
+  // Always include stored values for editing (separate from display values)
+  j += ",\"p1_host_stored\":\""; j += prefs.getString("p1_host", "192.168.68.145"); j += "\"";
+  j += ",\"p1_port_stored\":"; j += prefs.getUShort("p1_port", 6666);
+  j += ",\"p1_proto_stored\":\"";
+  j += (proto1==PROTO_TCP?"tcp":proto1==PROTO_HTTP?"http":"udp");
+  j += "\"";
+  
   j += ",\"p2_name\":\""; j += prefs.getString("p2_name", "OpenPlotter"); j += "\"";
   j += ",\"p2_proto\":\"";
   uint8_t proto2 = prefs.getUChar("p2_proto", PROTO_UDP);  // P2 defaults to UDP
   j += (proto2==PROTO_TCP?"tcp":proto2==PROTO_HTTP?"http":"udp");
   j += "\"";
-  j += ",\"p2_host\":\""; j += prefs.getString("p2_host", ""); j += "\"";
-  j += ",\"p2_port\":"; j += prefs.getUShort("p2_port", 10110);
+  // Show CURRENT values if P2 is active, otherwise show stored values
+  if (activeProfile == 1) {
+    j += ",\"p2_host\":\""; j += nmeaHost; j += "\"";
+    j += ",\"p2_port\":"; j += nmeaPort;
+  } else {
+    j += ",\"p2_host\":\""; j += prefs.getString("p2_host", ""); j += "\"";
+    j += ",\"p2_port\":"; j += prefs.getUShort("p2_port", 10110);
+  }
+  // Always include stored values for editing (separate from display values)
+  j += ",\"p2_host_stored\":\""; j += prefs.getString("p2_host", ""); j += "\"";
+  j += ",\"p2_port_stored\":"; j += prefs.getUShort("p2_port", 10110);
+  j += ",\"p2_proto_stored\":\"";
+  j += (proto2==PROTO_TCP?"tcp":proto2==PROTO_HTTP?"http":"udp");
+  j += "\"";
+  
+  // Connection history (last 5 connections)
+  j += ",\"connection_history\":[";
+  for (int i = 0; i < 5; i++) {
+    String histKey = "history_" + String(i);
+    String histVal = prefs.getString(histKey.c_str(), "");
+    if (histVal.length() > 0) {
+      if (i > 0) j += ",";
+      j += "\""; j += histVal; j += "\"";
+    }
+  }
+  j += "]";
+  
   j += ",\"tcp_connected\":"; j += (tcpConnected?"true":"false");
   j += ",\"udp_connected\":"; j += (udpConnected?"true":"false");
   j += ",\"sta_ip\":\"";   j += WiFi.localIP().toString(); j += "\"";
@@ -306,7 +363,6 @@ static void handleStatus(){
   j += ",\"ap_ssid\":\"";  j += WiFi.softAPSSID(); j += "\"";
   j += ",\"ap_ip\":\"";    j += WiFi.softAPIP().toString(); j += "\"";
   j += ",\"ap_clients\":"; j += apClientCount;
-  j += ",\"wifi_mode\":"; j += prefs.getUChar("wifi_mode", 0);
   j += ",\"w1_ssid\":\""; j += prefs.getString("w1_ssid", "Kontu"); j += "\"";
   j += ",\"w1_pass\":\""; j += prefs.getString("w1_pass", "8765432A1"); j += "\"";
   j += ",\"w2_ssid\":\""; j += prefs.getString("w2_ssid", ""); j += "\"";
