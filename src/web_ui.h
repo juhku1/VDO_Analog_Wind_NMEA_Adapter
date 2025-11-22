@@ -6,11 +6,20 @@
 // Enum protokollille
 enum { PROTO_UDP = 0, PROTO_TCP = 1, PROTO_HTTP = 2 };
 
+// Wind data types (user-friendly selection)
+enum WindDataType {
+  DATA_APPARENT_WIND = 0,  // Apparent Wind (näennäistuuli) - from MWV(R) or VWR
+  DATA_TRUE_WIND = 1,      // True Wind (todellinen tuuli) - from MWV(T) or VWT
+  DATA_VMG = 2,            // Velocity Made Good (future)
+  DATA_GROUND_WIND = 3     // Ground Wind (future)
+};
+
 // Display configuration structure
 struct DisplayConfig {
   bool enabled;
   char type[16];         // "logicwind" | "sumlog"
-  char sentence[8];      // "MWV" | "VWR" | "VWT"
+  uint8_t dataType;      // WindDataType: what kind of wind data to show
+  char sentence[8];      // DEPRECATED: kept for backward compatibility
   int offsetDeg;         // Logic Wind adjustment
   float sumlogK;         // Pulse per knot
   int sumlogFmax;        // Max frequency

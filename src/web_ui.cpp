@@ -84,6 +84,13 @@ static void handleDisplayAPI() {
       strncpy(displays[arrayIndex].type, typeStr.c_str(), sizeof(displays[arrayIndex].type) - 1);
       displays[arrayIndex].type[sizeof(displays[arrayIndex].type) - 1] = '\0';
     }
+    if (g_srv->hasArg("dataType")) {
+      int dt = g_srv->arg("dataType").toInt();
+      if (dt >= 0 && dt <= 3) {
+        displays[arrayIndex].dataType = (uint8_t)dt;
+      }
+    }
+    // Backward compatibility: sentence parameter (deprecated)
     if (g_srv->hasArg("sentence")) {
       String sentStr = g_srv->arg("sentence");
       strncpy(displays[arrayIndex].sentence, sentStr.c_str(), sizeof(displays[arrayIndex].sentence) - 1);

@@ -137,37 +137,63 @@ void nmeaPollTaskFunc(void *pvParameters) {
 
 /* ========= Asetusten tallennus ========= */
 void saveDisplayConfig(int displayNum = -1) {
+  xSemaphoreTake(nvsMutex, portMAX_DELAY);
   prefs.begin("cfg", false);
   
   if (displayNum == -1) {
-    // Tallenna kaikki displayt
+    // Save all displays
     for (int i = 0; i < 3; i++) {
-      String prefix = "d" + String(i) + "_";
-      prefs.putBool((prefix + "enabled").c_str(), displays[i].enabled);
-      prefs.putString((prefix + "type").c_str(), displays[i].type);
-      prefs.putString((prefix + "sentence").c_str(), displays[i].sentence);
-      prefs.putInt((prefix + "offset").c_str(), displays[i].offsetDeg);
-      prefs.putFloat((prefix + "sumlogK").c_str(), displays[i].sumlogK);
-      prefs.putInt((prefix + "sumlogFmax").c_str(), displays[i].sumlogFmax);
-      prefs.putInt((prefix + "pulseDuty").c_str(), displays[i].pulseDuty);
-      prefs.putInt((prefix + "pulsePin").c_str(), displays[i].pulsePin);
-      prefs.putInt((prefix + "gotoAngle").c_str(), displays[i].gotoAngle);
+      char prefix[8];
+      snprintf(prefix, sizeof(prefix), "d%d_", i);
+      char key[16];
+      
+      snprintf(key, sizeof(key), "%senabled", prefix);
+      prefs.putBool(key, displays[i].enabled);
+      snprintf(key, sizeof(key), "%stype", prefix);
+      prefs.putString(key, displays[i].type);
+      snprintf(key, sizeof(key), "%sdataType", prefix);
+      prefs.putUChar(key, displays[i].dataType);
+      snprintf(key, sizeof(key), "%soffset", prefix);
+      prefs.putInt(key, displays[i].offsetDeg);
+      snprintf(key, sizeof(key), "%ssumlogK", prefix);
+      prefs.putFloat(key, displays[i].sumlogK);
+      snprintf(key, sizeof(key), "%ssumlogFmax", prefix);
+      prefs.putInt(key, displays[i].sumlogFmax);
+      snprintf(key, sizeof(key), "%spulseDuty", prefix);
+      prefs.putInt(key, displays[i].pulseDuty);
+      snprintf(key, sizeof(key), "%spulsePin", prefix);
+      prefs.putInt(key, displays[i].pulsePin);
+      snprintf(key, sizeof(key), "%sgotoAngle", prefix);
+      prefs.putInt(key, displays[i].gotoAngle);
     }
   } else if (displayNum >= 0 && displayNum < 3) {
-    // Tallenna vain yksi display
-    String prefix = "d" + String(displayNum) + "_";
-    prefs.putBool((prefix + "enabled").c_str(), displays[displayNum].enabled);
-    prefs.putString((prefix + "type").c_str(), displays[displayNum].type);
-    prefs.putString((prefix + "sentence").c_str(), displays[displayNum].sentence);
-    prefs.putInt((prefix + "offset").c_str(), displays[displayNum].offsetDeg);
-    prefs.putFloat((prefix + "sumlogK").c_str(), displays[displayNum].sumlogK);
-    prefs.putInt((prefix + "sumlogFmax").c_str(), displays[displayNum].sumlogFmax);
-    prefs.putInt((prefix + "pulseDuty").c_str(), displays[displayNum].pulseDuty);
-    prefs.putInt((prefix + "pulsePin").c_str(), displays[displayNum].pulsePin);
-    prefs.putInt((prefix + "gotoAngle").c_str(), displays[displayNum].gotoAngle);
+    // Save single display
+    char prefix[8];
+    snprintf(prefix, sizeof(prefix), "d%d_", displayNum);
+    char key[16];
+    
+    snprintf(key, sizeof(key), "%senabled", prefix);
+    prefs.putBool(key, displays[displayNum].enabled);
+    snprintf(key, sizeof(key), "%stype", prefix);
+    prefs.putString(key, displays[displayNum].type);
+    snprintf(key, sizeof(key), "%sdataType", prefix);
+    prefs.putUChar(key, displays[displayNum].dataType);
+    snprintf(key, sizeof(key), "%soffset", prefix);
+    prefs.putInt(key, displays[displayNum].offsetDeg);
+    snprintf(key, sizeof(key), "%ssumlogK", prefix);
+    prefs.putFloat(key, displays[displayNum].sumlogK);
+    snprintf(key, sizeof(key), "%ssumlogFmax", prefix);
+    prefs.putInt(key, displays[displayNum].sumlogFmax);
+    snprintf(key, sizeof(key), "%spulseDuty", prefix);
+    prefs.putInt(key, displays[displayNum].pulseDuty);
+    snprintf(key, sizeof(key), "%spulsePin", prefix);
+    prefs.putInt(key, displays[displayNum].pulsePin);
+    snprintf(key, sizeof(key), "%sgotoAngle", prefix);
+    prefs.putInt(key, displays[displayNum].gotoAngle);
   }
   
   prefs.end();
+  xSemaphoreGive(nvsMutex);
 }
 
 void loadConfig(){
@@ -187,10 +213,20 @@ void loadConfig(){
     strncpy(displays[i].type, typeStr.c_str(), sizeof(displays[i].type) - 1);
     displays[i].type[sizeof(displays[i].type) - 1] = '\0';
     
-    snprintf(key, sizeof(key), "%ssentence", prefix);
-    String sentStr = prefs.getString(key, "MWV");
-    strncpy(displays[i].sentence, sentStr.c_str(), sizeof(displays[i].sentence) - 1);
-    displays[i].sentence[sizeof(displays[i].sentence) - 1] = '\0';
+    // Load dataType (new) or migrate from sentence (old)
+    snprintf(key, sizeof(key), "%sdataType", prefix);
+    if (prefs.isKey(key)) {
+      // New format: dataType exists
+      displays[i].dataType = prefs.getUChar(key, DATA_APPARENT_WIND);
+    } else {
+      // Old format: migrate from sentence
+      snprintf(key, sizeof(key), "%ssentence", prefix);
+      String sentStr = prefs.getString(key, "MWV");
+      // Migrate: MWV -> Apparent Wind (default), keep for compatibility
+      displays[i].dataType = DATA_APPARENT_WIND;
+      strncpy(displays[i].sentence, sentStr.c_str(), sizeof(displays[i].sentence) - 1);
+      displays[i].sentence[sizeof(displays[i].sentence) - 1] = '\0';
+    }
     
     snprintf(key, sizeof(key), "%soffset", prefix);
     displays[i].offsetDeg = prefs.getInt(key, 0);
@@ -501,16 +537,33 @@ void updateAllDisplayPulses() {
   }
 }
 
-// Update displays that match the given sentence type
-void updateDisplaysForSentence(const char* sentenceType, int angle, float speed, bool hasSpeed) {
+// Check if NMEA sentence matches display's data type
+bool sentenceMatchesDataType(const char* sentenceType, char reference, uint8_t dataType) {
+  if (dataType == DATA_APPARENT_WIND) {
+    // Apparent Wind: MWV(R) or VWR
+    if (strcmp(sentenceType, "MWV") == 0 && reference == 'R') return true;
+    if (strcmp(sentenceType, "VWR") == 0 && reference == '\0') return true;
+  }
+  else if (dataType == DATA_TRUE_WIND) {
+    // True Wind: MWV(T) or VWT
+    if (strcmp(sentenceType, "MWV") == 0 && reference == 'T') return true;
+    if (strcmp(sentenceType, "VWT") == 0 && reference == '\0') return true;
+  }
+  // Future: DATA_VMG, DATA_GROUND_WIND
+  
+  return false;
+}
+
+// Update displays that match the given sentence type and reference
+void updateDisplaysForSentence(const char* sentenceType, char reference, int angle, float speed, bool hasSpeed) {
   xSemaphoreTake(dataMutex, portMAX_DELAY);
   
   uint32_t now = millis();
   for (int i = 0; i < 3; i++) {
     if (!displays[i].enabled) continue;
     
-    // Check if this display wants this sentence type
-    if (strcmp(displays[i].sentence, sentenceType) == 0) {
+    // Check if this sentence matches display's data type
+    if (sentenceMatchesDataType(sentenceType, reference, displays[i].dataType)) {
       displays[i].windAngle_deg = angle;
       if (hasSpeed) {
         displays[i].windSpeed_kn = speed;
@@ -520,7 +573,11 @@ void updateDisplaysForSentence(const char* sentenceType, int angle, float speed,
   }
   
   // Update lastSentenceType for debugging
-  snprintf(lastSentenceType, sizeof(lastSentenceType), "%s", sentenceType);
+  if (reference != '\0') {
+    snprintf(lastSentenceType, sizeof(lastSentenceType), "%s(%c)", sentenceType, reference);
+  } else {
+    snprintf(lastSentenceType, sizeof(lastSentenceType), "%s", sentenceType);
+  }
   
   xSemaphoreGive(dataMutex);
   
@@ -575,8 +632,8 @@ bool parseMWV(char* line){
     }
   }
   
-  // Update displays that want MWV data
-  updateDisplaysForSentence("MWV", newAngle, newSpeed, hasSpeed);
+  // Update displays with reference (R=Relative/Apparent, T=True)
+  updateDisplaysForSentence("MWV", ref, newAngle, newSpeed, hasSpeed);
   
   if(ref=='R') hasMwvR = true;
   else if(ref=='T') hasMwvT = true;
@@ -602,8 +659,8 @@ bool parseVWR(char* line){
     }
   }
   
-  // Update displays that want VWR data
-  updateDisplaysForSentence("VWR", newAngle, newSpeed, hasSpeed);
+  // VWR is always Apparent Wind (no reference parameter)
+  updateDisplaysForSentence("VWR", '\0', newAngle, newSpeed, hasSpeed);
   
   hasVwr = true;
   return true;
@@ -628,8 +685,8 @@ bool parseVWT(char* line){
     }
   }
   
-  // Update displays that want VWT data
-  updateDisplaysForSentence("VWT", newAngle, newSpeed, hasSpeed);
+  // VWT is always True Wind (no reference parameter)
+  updateDisplaysForSentence("VWT", '\0', newAngle, newSpeed, hasSpeed);
   
   hasVwt = true;
   return true;
