@@ -65,8 +65,8 @@ static void handleDisplayAPI() {
       // Return display configuration as JSON
       String json = "{";
       json += "\"enabled\":" + String(displays[arrayIndex].enabled ? "true" : "false");
-      json += ",\"type\":\"" + displays[arrayIndex].type + "\"";
-      json += ",\"sentence\":\"" + displays[arrayIndex].sentence + "\"";
+      json += ",\"type\":\"" + String(displays[arrayIndex].type) + "\"";
+      json += ",\"sentence\":\"" + String(displays[arrayIndex].sentence) + "\"";
       json += ",\"offsetDeg\":" + String(displays[arrayIndex].offsetDeg);
       json += ",\"sumlogK\":" + String(displays[arrayIndex].sumlogK);
       json += ",\"sumlogFmax\":" + String(displays[arrayIndex].sumlogFmax);
@@ -79,8 +79,16 @@ static void handleDisplayAPI() {
   } else if (g_srv->method() == HTTP_POST && action == "save") {
     // Save all display settings
     if (g_srv->hasArg("enabled")) displays[arrayIndex].enabled = g_srv->arg("enabled").toInt() != 0;
-    if (g_srv->hasArg("type")) displays[arrayIndex].type = g_srv->arg("type");
-    if (g_srv->hasArg("sentence")) displays[arrayIndex].sentence = g_srv->arg("sentence");
+    if (g_srv->hasArg("type")) {
+      String typeStr = g_srv->arg("type");
+      strncpy(displays[arrayIndex].type, typeStr.c_str(), sizeof(displays[arrayIndex].type) - 1);
+      displays[arrayIndex].type[sizeof(displays[arrayIndex].type) - 1] = '\0';
+    }
+    if (g_srv->hasArg("sentence")) {
+      String sentStr = g_srv->arg("sentence");
+      strncpy(displays[arrayIndex].sentence, sentStr.c_str(), sizeof(displays[arrayIndex].sentence) - 1);
+      displays[arrayIndex].sentence[sizeof(displays[arrayIndex].sentence) - 1] = '\0';
+    }
     if (g_srv->hasArg("offsetDeg")) displays[arrayIndex].offsetDeg = g_srv->arg("offsetDeg").toInt();
     if (g_srv->hasArg("sumlogK")) displays[arrayIndex].sumlogK = g_srv->arg("sumlogK").toFloat();
     if (g_srv->hasArg("sumlogFmax")) displays[arrayIndex].sumlogFmax = g_srv->arg("sumlogFmax").toInt();
@@ -425,7 +433,8 @@ void setupWebUI(WebServer& server){
     if (g_srv->hasArg("val")) {
       String type = g_srv->arg("val");
       if (type == "logicwind" || type == "sumlog") {
-        displays[1].type = type;
+        strncpy(displays[1].type, type.c_str(), sizeof(displays[1].type) - 1);
+        displays[1].type[sizeof(displays[1].type) - 1] = '\0';
         saveDisplayConfig(1);
         updateDisplayPulse(1); // Update pulse settings
       }

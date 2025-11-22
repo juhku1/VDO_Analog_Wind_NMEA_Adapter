@@ -10,7 +10,14 @@
 #define LEDC_TIMER_RESOLUTION    10
 #define LEDC_BASE_FREQ           5000
 
-/* ========= Globaalit asetukset ja muuttujat ========= */
+/* ========= Global Settings and Variables ========= */
+
+// FreeRTOS synchronization primitives for thread safety
+SemaphoreHandle_t dataMutex = NULL;      // Protects wind data (speed, angle)
+SemaphoreHandle_t wifiMutex = NULL;      // Protects WiFi operations
+SemaphoreHandle_t nvsMutex = NULL;       // Protects NVS (Preferences) access
+SemaphoreHandle_t pauseAckSemaphore = NULL;  // For Core 1 pause acknowledgment
+
 Preferences prefs;
 
 // Unified display array (3 displays)
@@ -18,19 +25,24 @@ DisplayConfig displays[3];
 
 // LEDC channels for each display (0-2) with separate timers
 const uint8_t LEDC_CHANNELS[3] = {0, 1, 2};
-const uint8_t LEDC_TIMERS[3] = {0, 1, 2};  // Separate timer for each channel
+const uint8_t LEDC_TIMERS[3] = {0, 1, 2};
 bool ledcActive[3] = {false, false, false};
-uint32_t lastFreq[3] = {0, 0, 0};  // Track last frequency to avoid unnecessary changes
+uint32_t lastFreq[3] = {0, 0, 0};
 
-float sumlog_speed_kn = 0.0;  // Nopeus solmuina
+// Wind data - protected by dataMutex
+float sumlog_speed_kn = 0.0;
+int angleDeg = 0;
+int lastAngleSent = 0;
+char lastSentenceType[32] = "-";
+char lastSentenceRaw[256] = "-";
 
 #define AP_SSID           "VDO-Cal"
 #define AP_PASS           "wind12345"
 uint8_t  nmeaProto = PROTO_HTTP;
 uint16_t nmeaPort  = 80;
-String   nmeaHost  = "192.168.4.1";
+char nmeaHost[64] = "192.168.4.1";
 
-// Persistent TCP client for real-time Yachta wind data
+// Persistent TCP client for real-time wind data
 WiFiClient tcpClient;
 uint32_t lastTcpAttempt = 0;
 
@@ -44,13 +56,13 @@ volatile bool udpConnected = false;
 
 char netBuf[1472];
 char udpBuf[1472];
-char nmeaLineBuf[256] = {0};  // Buffer for accumulating incomplete lines
+char nmeaLineBuf[256] = {0};
 size_t nmeaLineBufLen = 0;
-uint32_t lastNmeaDataMs = 0;  // Timestamp of last received NMEA data
+uint32_t lastNmeaDataMs = 0;
 
 // FreeRTOS task for NMEA polling on Core 1
 TaskHandle_t nmeaPollTask = NULL;
-volatile bool pauseNmeaPoll = false;  // Flag to pause NMEA polling during config save
+volatile bool pauseNmeaPoll = false;
 
 #define SDA_PIN   21
 #define SCL_PIN   22
@@ -63,12 +75,8 @@ const uint8_t CH_SIN = 0;
 const uint8_t CH_COS = 1;
 const int VMIN = 2000, VCEN = 4000, VAMP_BASE = 2000, VMAX = 6000;
 
-int  offsetDeg = 0;
-int  angleDeg = 0;
-int  lastAngleSent = 0;
-String lastSentenceType = "-";
-String lastSentenceRaw  = "-";
-String connProfileName = "Yachta";  // Current connection profile name
+int offsetDeg = 0;
+char connProfileName[64] = "Yachta";
 bool freezeNMEA = false;
 
 // NMEA sentence type tracking (5s window)
@@ -167,16 +175,40 @@ void loadConfig(){
   
   // Initialize displays with defaults
   for (int i = 0; i < 3; i++) {
-    String prefix = "d" + String(i) + "_";
-    displays[i].enabled = prefs.getBool((prefix + "enabled").c_str(), i == 0); // Display 0 enabled by default
-    displays[i].type = prefs.getString((prefix + "type").c_str(), "sumlog");
-    displays[i].sentence = prefs.getString((prefix + "sentence").c_str(), "MWV");
-    displays[i].offsetDeg = prefs.getInt((prefix + "offset").c_str(), 0);
-    displays[i].sumlogK = prefs.getFloat((prefix + "sumlogK").c_str(), 1.0f);
-    displays[i].sumlogFmax = prefs.getInt((prefix + "sumlogFmax").c_str(), 150);
-    displays[i].pulseDuty = prefs.getInt((prefix + "pulseDuty").c_str(), 10);
-    displays[i].pulsePin = prefs.getInt((prefix + "pulsePin").c_str(), 12 + i * 2); // Default pins: 12, 14, 16
-    displays[i].gotoAngle = prefs.getInt((prefix + "gotoAngle").c_str(), 0);
+    char prefix[8];
+    snprintf(prefix, sizeof(prefix), "d%d_", i);
+    char key[16];
+    
+    snprintf(key, sizeof(key), "%senabled", prefix);
+    displays[i].enabled = prefs.getBool(key, i == 0);
+    
+    snprintf(key, sizeof(key), "%stype", prefix);
+    String typeStr = prefs.getString(key, "sumlog");
+    strncpy(displays[i].type, typeStr.c_str(), sizeof(displays[i].type) - 1);
+    displays[i].type[sizeof(displays[i].type) - 1] = '\0';
+    
+    snprintf(key, sizeof(key), "%ssentence", prefix);
+    String sentStr = prefs.getString(key, "MWV");
+    strncpy(displays[i].sentence, sentStr.c_str(), sizeof(displays[i].sentence) - 1);
+    displays[i].sentence[sizeof(displays[i].sentence) - 1] = '\0';
+    
+    snprintf(key, sizeof(key), "%soffset", prefix);
+    displays[i].offsetDeg = prefs.getInt(key, 0);
+    
+    snprintf(key, sizeof(key), "%ssumlogK", prefix);
+    displays[i].sumlogK = prefs.getFloat(key, 1.0f);
+    
+    snprintf(key, sizeof(key), "%ssumlogFmax", prefix);
+    displays[i].sumlogFmax = prefs.getInt(key, 150);
+    
+    snprintf(key, sizeof(key), "%spulseDuty", prefix);
+    displays[i].pulseDuty = prefs.getInt(key, 10);
+    
+    snprintf(key, sizeof(key), "%spulsePin", prefix);
+    displays[i].pulsePin = prefs.getInt(key, 12 + i * 2);
+    
+    snprintf(key, sizeof(key), "%sgotoAngle", prefix);
+    displays[i].gotoAngle = prefs.getInt(key, 0);
   }
   
   offsetDeg = prefs.getInt("offset", 0);
@@ -202,9 +234,11 @@ void loadConfig(){
   
   // Configure TCP connection (Profile 1) - always active
   nmeaProto = p1_proto;
-  nmeaHost = p1_host;
+  strncpy(nmeaHost, p1_host.c_str(), sizeof(nmeaHost) - 1);
+  nmeaHost[sizeof(nmeaHost) - 1] = '\0';
   nmeaPort = p1_port;
-  connProfileName = p1_name;
+  strncpy(connProfileName, p1_name.c_str(), sizeof(connProfileName) - 1);
+  connProfileName[sizeof(connProfileName) - 1] = '\0';
   
   String s         = prefs.getString("sta_ssid", "");
   String ap        = prefs.getString("ap_pass", AP_PASS);
@@ -489,15 +523,26 @@ bool parseMWV(char* line){
   float ang = atof(f[1]); char ref = toupper((unsigned char)f[2][0]);
   if(ref!='R' && ref!='T') return false;
   if(!(ang>=0 && ang<=360)) return false;
-  angleDeg = wrap360((int)lroundf(ang));
+  
+  int newAngle = wrap360((int)lroundf(ang));
+  float newSpeed = sumlog_speed_kn;
+  
   if(n>=4) {
     float spd = atof(f[3]);
     if(spd>=0 && spd<200) {
-      sumlog_speed_kn = spd;
-      updateAllDisplayPulses();
+      newSpeed = spd;
     }
   }
-  lastSentenceType = String("MWV(")+ref+")";
+  
+  // Update shared data with mutex protection
+  xSemaphoreTake(dataMutex, portMAX_DELAY);
+  angleDeg = newAngle;
+  sumlog_speed_kn = newSpeed;
+  snprintf(lastSentenceType, sizeof(lastSentenceType), "MWV(%c)", ref);
+  xSemaphoreGive(dataMutex);
+  
+  updateAllDisplayPulses();
+  
   if(ref=='R') hasMwvR = true;
   else if(ref=='T') hasMwvT = true;
   return true;
@@ -510,15 +555,25 @@ bool parseVWR(char* line){
   float ang = atof(f[1]); char side = toupper((unsigned char)f[2][0]);
   if(!(ang>=0 && ang<=180)) return false;
   int awa = (int)lroundf(ang);
-  angleDeg = (side=='L') ? wrap360(360-awa) : awa;
+  int newAngle = (side=='L') ? wrap360(360-awa) : awa;
+  float newSpeed = sumlog_speed_kn;
+  
   if(n>=4) {
     float spd = atof(f[3]);
     if(spd>=0 && spd<200) {
-      sumlog_speed_kn = spd;
-      updateAllDisplayPulses();
+      newSpeed = spd;
     }
   }
-  lastSentenceType = "VWR";
+  
+  // Update shared data with mutex protection
+  xSemaphoreTake(dataMutex, portMAX_DELAY);
+  angleDeg = newAngle;
+  sumlog_speed_kn = newSpeed;
+  strncpy(lastSentenceType, "VWR", sizeof(lastSentenceType) - 1);
+  lastSentenceType[sizeof(lastSentenceType) - 1] = '\0';
+  xSemaphoreGive(dataMutex);
+  
+  updateAllDisplayPulses();
   hasVwr = true;
   return true;
 }
@@ -530,15 +585,25 @@ bool parseVWT(char* line){
   float ang = atof(f[1]); char side = toupper((unsigned char)f[2][0]);
   if(!(ang>=0 && ang<=180)) return false;
   int awa = (int)lroundf(ang);
-  angleDeg = (side=='L') ? wrap360(360-awa) : awa;
+  int newAngle = (side=='L') ? wrap360(360-awa) : awa;
+  float newSpeed = sumlog_speed_kn;
+  
   if(n>=4) {
     float spd = atof(f[3]);
     if(spd>=0 && spd<200) {
-      sumlog_speed_kn = spd;
-      updateAllDisplayPulses();
+      newSpeed = spd;
     }
   }
-  lastSentenceType = "VWT";
+  
+  // Update shared data with mutex protection
+  xSemaphoreTake(dataMutex, portMAX_DELAY);
+  angleDeg = newAngle;
+  sumlog_speed_kn = newSpeed;
+  strncpy(lastSentenceType, "VWT", sizeof(lastSentenceType) - 1);
+  lastSentenceType[sizeof(lastSentenceType) - 1] = '\0';
+  xSemaphoreGive(dataMutex);
+  
+  updateAllDisplayPulses();
   hasVwt = true;
   return true;
 }
@@ -559,17 +624,16 @@ bool parseNMEALine(char* line){
 void ensureTCPConnected(WiFiClient& client){
   if (client.connected()) return;
   uint32_t now = millis();
-  if (now < lastTcpAttempt) return;  // Don't retry too often
-  lastTcpAttempt = now + 3000;  // Wait 3 seconds between connection attempts
+  if (now < lastTcpAttempt) return;
+  lastTcpAttempt = now + 3000;
   
-  Serial.printf("TCP connect to %s:%u...\n", nmeaHost.c_str(), nmeaPort);
+  Serial.printf("TCP connect to %s:%u...\n", nmeaHost, nmeaPort);
   client.stop();
-  client.setTimeout(1000);  // 1 second timeout for connect
+  client.setTimeout(1000);
   
-  // Try to connect with short timeout (will complete or timeout quickly)
-  if(client.connect(nmeaHost.c_str(), nmeaPort)) {
+  if(client.connect(nmeaHost, nmeaPort)) {
     Serial.println("TCP connected! Setting non-blocking mode...");
-    client.setTimeout(0);  // Now switch to non-blocking for reading
+    client.setTimeout(0);
   } else {
     Serial.println("TCP connect failed");
   }
@@ -603,7 +667,11 @@ void pollTCP(WiFiClient& client){
           // End of line found
           if(nmeaLineBufLen > 0) {
             nmeaLineBuf[nmeaLineBufLen] = 0;
-            lastSentenceRaw = String(nmeaLineBuf);
+            
+            xSemaphoreTake(dataMutex, portMAX_DELAY);
+            strncpy(lastSentenceRaw, nmeaLineBuf, sizeof(lastSentenceRaw) - 1);
+            lastSentenceRaw[sizeof(lastSentenceRaw) - 1] = '\0';
+            xSemaphoreGive(dataMutex);
             lastNmeaDataMs = millis();
             if(parseNMEALine(nmeaLineBuf)) {
               setOutputsDeg(0, angleDeg);
@@ -620,8 +688,8 @@ void pollTCP(WiFiClient& client){
 }
 
 void bindTransport(){
-  Serial.printf("TCP stream: %s:%u\n", nmeaHost.c_str(), nmeaPort);
-  lastTcpAttempt = 0;  // Attempt connection immediately
+  Serial.printf("TCP stream: %s:%u\n", nmeaHost, nmeaPort);
+  lastTcpAttempt = 0;
 }
 
 void ensureUDPBound() {
@@ -677,10 +745,16 @@ void pollUDP() {
           // End of line found
           if (nmeaLineBufLen > 0) {
             nmeaLineBuf[nmeaLineBufLen] = 0;
-            lastSentenceRaw = String(nmeaLineBuf);
+            
+            xSemaphoreTake(dataMutex, portMAX_DELAY);
+            strncpy(lastSentenceRaw, nmeaLineBuf, sizeof(lastSentenceRaw) - 1);
+            lastSentenceRaw[sizeof(lastSentenceRaw) - 1] = '\0';
+            int angle = angleDeg;
+            xSemaphoreGive(dataMutex);
+            
             lastNmeaDataMs = millis();
             if (parseNMEALine(nmeaLineBuf)) {
-              setOutputsDeg(0, angleDeg);
+              setOutputsDeg(0, angle);
             }
             nmeaLineBufLen = 0;
           }
@@ -721,6 +795,18 @@ void connectSTA(){
 void setup() {
   Serial.begin(115200);
   delay(500);
+
+  // Initialize FreeRTOS synchronization primitives
+  dataMutex = xSemaphoreCreateMutex();
+  wifiMutex = xSemaphoreCreateMutex();
+  nvsMutex = xSemaphoreCreateMutex();
+  pauseAckSemaphore = xSemaphoreCreateBinary();
+  
+  if (!dataMutex || !wifiMutex || !nvsMutex || !pauseAckSemaphore) {
+    Serial.println("FATAL: Failed to create mutexes!");
+    while(1) delay(1000);
+  }
+  Serial.println("Mutexes initialized");
 
   loadConfig();
 
