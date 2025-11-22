@@ -501,27 +501,6 @@ String buildStatusPage() {
   <p>Real-time wind data and system information</p>
 </div>
 
-<!-- Incoming & Outgoing Data Info -->
-<fieldset>
-  <legend>Incoming & Outgoing Data</legend>
-  <div class=row>
-    <label>Incoming NMEA:</label>
-    <span id=raw class="mono"></span>
-  </div>
-  <div class=row>
-    <label>Received Types (5s window):</label>
-    <span id=sentence_types style="font-family:monospace;"></span>
-  </div>
-  <div class=row>
-    <label>Outgoing angle:</label>
-    <span id=ang></span>°
-  </div>
-  <div class=row>
-    <label>Outgoing speed:</label>
-    <span id=spd></span> kn
-  </div>
-</fieldset>
-
 )HTML" + buildDataFlowTable() + R"HTML(
 
 <!-- Status Overview with Edit Buttons -->
