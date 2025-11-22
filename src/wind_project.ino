@@ -36,6 +36,21 @@ int lastAngleSent = 0;
 char lastSentenceType[32] = "-";
 char lastSentenceRaw[256] = "-";
 
+// GPS data - protected by dataMutex
+float gps_sog_kn = 0.0;        // Speed Over Ground (knots)
+float gps_cog_deg = 0.0;       // Course Over Ground (degrees)
+float gps_heading_deg = 0.0;   // True Heading (degrees)
+bool gps_hasSOG = false;
+bool gps_hasCOG = false;
+bool gps_hasHeading = false;
+uint32_t gps_lastUpdate_ms = 0;
+
+// Apparent Wind data for calculation - protected by dataMutex
+float apparent_speed_kn = 0.0;
+float apparent_angle_deg = 0.0;
+bool apparent_hasData = false;
+uint32_t apparent_lastUpdate_ms = 0;
+
 #define AP_SSID           "VDO-Cal"
 #define AP_PASS           "wind12345"
 uint8_t  nmeaProto = PROTO_HTTP;
@@ -559,6 +574,18 @@ void updateDisplaysForSentence(const char* sentenceType, char reference, int ang
   xSemaphoreTake(dataMutex, portMAX_DELAY);
   
   uint32_t now = millis();
+  
+  // Store Apparent Wind data for True Wind calculation
+  if ((strcmp(sentenceType, "MWV") == 0 && reference == 'R') || strcmp(sentenceType, "VWR") == 0) {
+    apparent_angle_deg = angle;
+    if (hasSpeed) {
+      apparent_speed_kn = speed;
+    }
+    apparent_hasData = true;
+    apparent_lastUpdate_ms = now;
+  }
+  
+  // Update displays that match sentence directly
   for (int i = 0; i < 3; i++) {
     if (!displays[i].enabled) continue;
     
@@ -581,8 +608,115 @@ void updateDisplaysForSentence(const char* sentenceType, char reference, int ang
   
   xSemaphoreGive(dataMutex);
   
+  // Try to calculate True Wind for displays that need it
+  float trueSpeed, trueAngle;
+  if (calculateTrueWind(trueSpeed, trueAngle)) {
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    for (int i = 0; i < 3; i++) {
+      if (!displays[i].enabled) continue;
+      
+      // If display wants True Wind but we don't have direct data, use calculated
+      if (displays[i].dataType == DATA_TRUE_WIND) {
+        // Only update if we don't have recent direct True Wind data
+        if ((now - displays[i].lastUpdate_ms) > 1000) {
+          displays[i].windAngle_deg = (int)trueAngle;
+          displays[i].windSpeed_kn = trueSpeed;
+          displays[i].lastUpdate_ms = now;
+        }
+      }
+    }
+    xSemaphoreGive(dataMutex);
+  }
+  
+  // Calculate VMG for displays that need it
+  float vmg;
+  if (calculateVMG(vmg)) {
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    for (int i = 0; i < 3; i++) {
+      if (!displays[i].enabled) continue;
+      
+      if (displays[i].dataType == DATA_VMG) {
+        displays[i].windSpeed_kn = vmg;
+        displays[i].windAngle_deg = 0; // VMG has no angle
+        displays[i].lastUpdate_ms = now;
+      }
+    }
+    xSemaphoreGive(dataMutex);
+  }
+  
   // Update pulse outputs for all active displays
   updateAllDisplayPulses();
+}
+
+/* ========= Wind Calculations ========= */
+
+// Calculate True Wind from Apparent Wind + GPS data
+// Returns true if calculation was successful
+bool calculateTrueWind(float& trueSpeed, float& trueAngle) {
+  // Need: Apparent Wind + SOG + COG (or Heading)
+  xSemaphoreTake(dataMutex, portMAX_DELAY);
+  
+  bool hasData = apparent_hasData && gps_hasSOG && (gps_hasCOG || gps_hasHeading);
+  if (!hasData) {
+    xSemaphoreGive(dataMutex);
+    return false;
+  }
+  
+  // Check data age (max 5 seconds old)
+  uint32_t now = millis();
+  if ((now - apparent_lastUpdate_ms) > 5000 || (now - gps_lastUpdate_ms) > 5000) {
+    xSemaphoreGive(dataMutex);
+    return false;
+  }
+  
+  float aws = apparent_speed_kn;  // Apparent Wind Speed
+  float awa = apparent_angle_deg; // Apparent Wind Angle (relative to bow)
+  float sog = gps_sog_kn;         // Speed Over Ground
+  float cog = gps_hasCOG ? gps_cog_deg : gps_heading_deg; // Course/Heading
+  
+  xSemaphoreGive(dataMutex);
+  
+  // Convert to radians
+  float awa_rad = awa * DEG_TO_RAD;
+  
+  // Apparent Wind vector components (relative to boat)
+  float aws_x = aws * sin(awa_rad);  // Cross component
+  float aws_y = aws * cos(awa_rad);  // Forward component
+  
+  // Boat velocity vector (subtract from apparent to get true)
+  // Boat moves forward, so subtract from forward component
+  float tws_x = aws_x;
+  float tws_y = aws_y - sog;
+  
+  // True Wind Speed and Angle
+  trueSpeed = sqrt(tws_x * tws_x + tws_y * tws_y);
+  trueAngle = atan2(tws_x, tws_y) * RAD_TO_DEG;
+  
+  // Normalize angle to 0-360
+  if (trueAngle < 0) trueAngle += 360;
+  
+  Serial.printf("Calculated True Wind: AWS=%.1f@%.0f° + SOG=%.1f -> TWS=%.1f@%.0f°\n",
+                aws, awa, sog, trueSpeed, trueAngle);
+  
+  return true;
+}
+
+// Calculate VMG (Velocity Made Good)
+// Returns true if calculation was successful
+bool calculateVMG(float& vmg) {
+  // For now, just return SOG (simple VMG without waypoint)
+  // Future: VMG = SOG × cos(angle to waypoint)
+  xSemaphoreTake(dataMutex, portMAX_DELAY);
+  
+  if (!gps_hasSOG) {
+    xSemaphoreGive(dataMutex);
+    return false;
+  }
+  
+  vmg = gps_sog_kn;
+  xSemaphoreGive(dataMutex);
+  
+  return true;
 }
 
 /* ========= NMEA-parsinta ========= */
@@ -665,6 +799,110 @@ bool parseVWR(char* line){
   hasVwr = true;
   return true;
 }
+// Parse RMC: $GPRMC,time,status,lat,N,lon,E,speed,course,date,magvar,E*checksum
+bool parseRMC(char* line){
+  char* f[15]; int n = splitCSV(line, f, 15);
+  if(n<9) return false;
+  if(!hasFormatter(line,"RMC")) return false;
+  if(!nmeaChecksumOK(line)) return false;
+  
+  // f[2] = status (A=valid, V=invalid)
+  if(f[2][0] != 'A') return false;
+  
+  // f[7] = speed over ground (knots)
+  // f[8] = course over ground (degrees)
+  float sog = atof(f[7]);
+  float cog = atof(f[8]);
+  
+  if(sog >= 0 && sog < 100 && cog >= 0 && cog <= 360) {
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    gps_sog_kn = sog;
+    gps_cog_deg = cog;
+    gps_hasSOG = true;
+    gps_hasCOG = true;
+    gps_lastUpdate_ms = millis();
+    xSemaphoreGive(dataMutex);
+    
+    Serial.printf("GPS RMC: SOG=%.1f kn, COG=%.1f°\n", sog, cog);
+    return true;
+  }
+  return false;
+}
+
+// Parse VTG: $GPVTG,cogt,T,cogm,M,sog,N,sogk,K*checksum
+bool parseVTG(char* line){
+  char* f[12]; int n = splitCSV(line, f, 12);
+  if(n<8) return false;
+  if(!hasFormatter(line,"VTG")) return false;
+  if(!nmeaChecksumOK(line)) return false;
+  
+  // f[1] = course over ground (true)
+  // f[5] = speed over ground (knots)
+  float cog = atof(f[1]);
+  float sog = atof(f[5]);
+  
+  if(sog >= 0 && sog < 100 && cog >= 0 && cog <= 360) {
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    gps_sog_kn = sog;
+    gps_cog_deg = cog;
+    gps_hasSOG = true;
+    gps_hasCOG = true;
+    gps_lastUpdate_ms = millis();
+    xSemaphoreGive(dataMutex);
+    
+    Serial.printf("GPS VTG: SOG=%.1f kn, COG=%.1f°\n", sog, cog);
+    return true;
+  }
+  return false;
+}
+
+// Parse HDT: $GPHDT,heading,T*checksum
+bool parseHDT(char* line){
+  char* f[5]; int n = splitCSV(line, f, 5);
+  if(n<2) return false;
+  if(!hasFormatter(line,"HDT")) return false;
+  if(!nmeaChecksumOK(line)) return false;
+  
+  // f[1] = true heading
+  float heading = atof(f[1]);
+  
+  if(heading >= 0 && heading <= 360) {
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    gps_heading_deg = heading;
+    gps_hasHeading = true;
+    gps_lastUpdate_ms = millis();
+    xSemaphoreGive(dataMutex);
+    
+    Serial.printf("GPS HDT: Heading=%.1f°\n", heading);
+    return true;
+  }
+  return false;
+}
+
+// Parse HDM: $GPHDM,heading,M*checksum (magnetic heading)
+bool parseHDM(char* line){
+  char* f[5]; int n = splitCSV(line, f, 5);
+  if(n<2) return false;
+  if(!hasFormatter(line,"HDM")) return false;
+  if(!nmeaChecksumOK(line)) return false;
+  
+  // f[1] = magnetic heading
+  // Note: We store as-is, proper magnetic variation correction would need declination
+  float heading = atof(f[1]);
+  
+  if(heading >= 0 && heading <= 360) {
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    gps_heading_deg = heading;
+    gps_hasHeading = true;
+    gps_lastUpdate_ms = millis();
+    xSemaphoreGive(dataMutex);
+    
+    Serial.printf("GPS HDM: Heading=%.1f° (magnetic)\n", heading);
+    return true;
+  }
+  return false;
+}
+
 bool parseVWT(char* line){
   char* f[12]; int n = splitCSV(line, f, 12);
   if(n<3) return false;
@@ -695,12 +933,25 @@ bool parseNMEALine(char* line){
   if(strlen(line)<6 || line[0]!='$') return false;
   static char tmp[256];
   size_t L = min(strlen(line), sizeof(tmp)-1);
+  
+  // Wind sentences
   memcpy(tmp, line, L); tmp[L]=0;
   if(hasFormatter(tmp,"MWV") && parseMWV(tmp)) return true;
   memcpy(tmp,line,L); tmp[L]=0;
   if(hasFormatter(tmp,"VWR") && parseVWR(tmp)) return true;
   memcpy(tmp,line,L); tmp[L]=0;
   if(hasFormatter(tmp,"VWT") && parseVWT(tmp)) return true;
+  
+  // GPS sentences
+  memcpy(tmp,line,L); tmp[L]=0;
+  if(hasFormatter(tmp,"RMC") && parseRMC(tmp)) return true;
+  memcpy(tmp,line,L); tmp[L]=0;
+  if(hasFormatter(tmp,"VTG") && parseVTG(tmp)) return true;
+  memcpy(tmp,line,L); tmp[L]=0;
+  if(hasFormatter(tmp,"HDT") && parseHDT(tmp)) return true;
+  memcpy(tmp,line,L); tmp[L]=0;
+  if(hasFormatter(tmp,"HDM") && parseHDM(tmp)) return true;
+  
   return false;
 }
 
