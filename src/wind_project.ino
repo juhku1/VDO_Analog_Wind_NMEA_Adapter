@@ -519,11 +519,7 @@ void updateDisplaysForSentence(const char* sentenceType, int angle, float speed,
     }
   }
   
-  // Also update global variables for backward compatibility
-  angleDeg = angle;
-  if (hasSpeed) {
-    sumlog_speed_kn = speed;
-  }
+  // Update lastSentenceType for debugging
   snprintf(lastSentenceType, sizeof(lastSentenceType), "%s", sentenceType);
   
   xSemaphoreGive(dataMutex);

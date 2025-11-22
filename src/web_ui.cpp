@@ -142,7 +142,7 @@ static void handleTrim(){
     if (v<-180) v=-180; if (v>180) v=180;
     offsetDeg = v;
     prefs.putInt("offset", offsetDeg);
-  setOutputsDeg(0, angleDeg); // TODO: käytä oikeaa displayNum:ia
+    setOutputsDeg(0, 0); // Update DAC with Display 0 data
   }
   g_srv->send(200, "text/plain", String("offset=")+offsetDeg);
 }
@@ -150,10 +150,21 @@ static void handleGoto(){
   if (g_srv->hasArg("deg")){
     int v = g_srv->arg("deg").toInt();
     if (v<0) v=0; if (v>359) v=359;
-    angleDeg = v;
-  setOutputsDeg(0, angleDeg); // TODO: käytä oikeaa displayNum:ia
+    
+    // Set Display 0 angle manually for testing
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    displays[0].windAngle_deg = v;
+    xSemaphoreGive(dataMutex);
+    
+    setOutputsDeg(0, 0); // Update DAC with Display 0 data
   }
-  g_srv->send(200,"text/plain",String("angle=")+angleDeg);
+  
+  int currentAngle;
+  xSemaphoreTake(dataMutex, portMAX_DELAY);
+  currentAngle = displays[0].windAngle_deg;
+  xSemaphoreGive(dataMutex);
+  
+  g_srv->send(200,"text/plain",String("angle=")+currentAngle);
 }
 static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1_host, p1_port, p2_name, p2_proto, p2_host, p2_port, wifi_mode, w1_ssid, w1_pass, w2_ssid, w2_pass
   if (g_srv->method() != HTTP_POST){
@@ -280,11 +291,19 @@ static void handleStatus(){
   // Get AP client count
   uint8_t apClientCount = WiFi.softAPgetStationNum();
   
+  // Read Display 0 data for status (primary display)
+  float display0_speed;
+  int display0_angle;
+  xSemaphoreTake(dataMutex, portMAX_DELAY);
+  display0_speed = displays[0].windSpeed_kn;
+  display0_angle = displays[0].windAngle_deg;
+  xSemaphoreGive(dataMutex);
+  
   String j; j.reserve(600);
   j += "{";
-  j += "\"angle\":";      j += lastAngleSent;
+  j += "\"angle\":";      j += display0_angle;
   j += ",\"offset\":";      j += offsetDeg;
-  j += ",\"speed_kn\":";    j += sumlog_speed_kn;
+  j += ",\"speed_kn\":";    j += display0_speed;
   j += ",\"displays\":[";
   for (int i = 0; i < 3; i++) {
     if (i > 0) j += ",";
