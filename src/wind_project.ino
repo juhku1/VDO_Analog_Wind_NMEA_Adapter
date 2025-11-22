@@ -209,6 +209,11 @@ void loadConfig(){
     
     snprintf(key, sizeof(key), "%sgotoAngle", prefix);
     displays[i].gotoAngle = prefs.getInt(key, 0);
+    
+    // Initialize per-display wind data
+    displays[i].windSpeed_kn = 0.0f;
+    displays[i].windAngle_deg = 0;
+    displays[i].lastUpdate_ms = 0;
   }
   
   offsetDeg = prefs.getInt("offset", 0);
@@ -311,20 +316,32 @@ static inline int wrap360(int d){ d%=360; if(d<0) d+=360; return d; }
 static inline int mvClamp(int mv){ if(mv<VMIN) return VMIN; if(mv>VMAX) return VMAX; return mv; }
 
 void setOutputsDeg(int displayNum, int deg){
-  int adj = wrap360(deg + displays[displayNum].offsetDeg);
+  if (displayNum < 0 || displayNum >= 3) return;
+  
+  // Read per-display angle with mutex protection
+  int displayAngle;
+  xSemaphoreTake(dataMutex, portMAX_DELAY);
+  displayAngle = displays[displayNum].windAngle_deg;
+  xSemaphoreGive(dataMutex);
+  
+  int adj = wrap360(displayAngle + displays[displayNum].offsetDeg);
   float r = adj * DEG_TO_RAD;
   float s = sinf(r), c = cosf(r);
   float amp = VAMP_BASE;
   int sin_mV = mvClamp(VCEN + (int)lroundf(amp * s));
   int cos_mV = mvClamp(VCEN + (int)lroundf(amp * c));
-  dac.setDACOutVoltage(sin_mV, CH_SIN);
-  dac.setDACOutVoltage(cos_mV, CH_COS);
   
-  // Track direction changes
-  if (adj != lastAngleSent) {
-    Serial.printf("Direction: %d° (sin:%dmV cos:%dmV)\n", adj, sin_mV, cos_mV);
+  // Only update DAC for display 0 (primary display)
+  if (displayNum == 0) {
+    dac.setDACOutVoltage(sin_mV, CH_SIN);
+    dac.setDACOutVoltage(cos_mV, CH_COS);
+    
+    // Track direction changes
+    if (adj != lastAngleSent) {
+      Serial.printf("Display %d Direction: %d° (sin:%dmV cos:%dmV)\n", displayNum, adj, sin_mV, cos_mV);
+    }
+    lastAngleSent = adj;
   }
-  lastAngleSent = adj;
 }
 
 /* ========= LEDC Pulse Generation ========= */
@@ -361,18 +378,20 @@ void updateDisplayPulse(int displayNum) {
   
   DisplayConfig &disp = displays[displayNum];
   
-  // Read speed with mutex protection
+  // Read per-display speed with mutex protection
   float currentSpeed;
+  uint32_t lastUpdate;
   xSemaphoreTake(dataMutex, portMAX_DELAY);
-  currentSpeed = sumlog_speed_kn;
+  currentSpeed = disp.windSpeed_kn;
+  lastUpdate = disp.lastUpdate_ms;
   xSemaphoreGive(dataMutex);
   
-  // Check for data timeout (4 seconds without NMEA data)
-  uint32_t dataAge = millis() - lastNmeaDataMs;
+  // Check for data timeout (4 seconds without NMEA data for this display)
+  uint32_t dataAge = millis() - lastUpdate;
   if (dataAge > 4000) {
     currentSpeed = 0.0f;
     if (lastFreq[displayNum] != 0) {
-      Serial.printf("Data timeout! Last NMEA data %u ms ago - zeroing speed\n", dataAge);
+      Serial.printf("Display %d timeout! Last data %u ms ago - zeroing speed\n", displayNum, dataAge);
     }
   }
   
@@ -482,6 +501,37 @@ void updateAllDisplayPulses() {
   }
 }
 
+// Update displays that match the given sentence type
+void updateDisplaysForSentence(const char* sentenceType, int angle, float speed, bool hasSpeed) {
+  xSemaphoreTake(dataMutex, portMAX_DELAY);
+  
+  uint32_t now = millis();
+  for (int i = 0; i < 3; i++) {
+    if (!displays[i].enabled) continue;
+    
+    // Check if this display wants this sentence type
+    if (strcmp(displays[i].sentence, sentenceType) == 0) {
+      displays[i].windAngle_deg = angle;
+      if (hasSpeed) {
+        displays[i].windSpeed_kn = speed;
+      }
+      displays[i].lastUpdate_ms = now;
+    }
+  }
+  
+  // Also update global variables for backward compatibility
+  angleDeg = angle;
+  if (hasSpeed) {
+    sumlog_speed_kn = speed;
+  }
+  snprintf(lastSentenceType, sizeof(lastSentenceType), "%s", sentenceType);
+  
+  xSemaphoreGive(dataMutex);
+  
+  // Update pulse outputs for all active displays
+  updateAllDisplayPulses();
+}
+
 /* ========= NMEA-parsinta ========= */
 bool nmeaChecksumOK(const char* s){
   const char* star = strrchr(s, '*');
@@ -529,16 +579,8 @@ bool parseMWV(char* line){
     }
   }
   
-  // Update shared data with mutex protection
-  xSemaphoreTake(dataMutex, portMAX_DELAY);
-  angleDeg = newAngle;
-  if (hasSpeed) {
-    sumlog_speed_kn = newSpeed;
-  }
-  snprintf(lastSentenceType, sizeof(lastSentenceType), "MWV(%c)", ref);
-  xSemaphoreGive(dataMutex);
-  
-  updateAllDisplayPulses();
+  // Update displays that want MWV data
+  updateDisplaysForSentence("MWV", newAngle, newSpeed, hasSpeed);
   
   if(ref=='R') hasMwvR = true;
   else if(ref=='T') hasMwvT = true;
@@ -564,17 +606,9 @@ bool parseVWR(char* line){
     }
   }
   
-  // Update shared data with mutex protection
-  xSemaphoreTake(dataMutex, portMAX_DELAY);
-  angleDeg = newAngle;
-  if (hasSpeed) {
-    sumlog_speed_kn = newSpeed;
-  }
-  strncpy(lastSentenceType, "VWR", sizeof(lastSentenceType) - 1);
-  lastSentenceType[sizeof(lastSentenceType) - 1] = '\0';
-  xSemaphoreGive(dataMutex);
+  // Update displays that want VWR data
+  updateDisplaysForSentence("VWR", newAngle, newSpeed, hasSpeed);
   
-  updateAllDisplayPulses();
   hasVwr = true;
   return true;
 }
@@ -598,17 +632,9 @@ bool parseVWT(char* line){
     }
   }
   
-  // Update shared data with mutex protection
-  xSemaphoreTake(dataMutex, portMAX_DELAY);
-  angleDeg = newAngle;
-  if (hasSpeed) {
-    sumlog_speed_kn = newSpeed;
-  }
-  strncpy(lastSentenceType, "VWT", sizeof(lastSentenceType) - 1);
-  lastSentenceType[sizeof(lastSentenceType) - 1] = '\0';
-  xSemaphoreGive(dataMutex);
+  // Update displays that want VWT data
+  updateDisplaysForSentence("VWT", newAngle, newSpeed, hasSpeed);
   
-  updateAllDisplayPulses();
   hasVwt = true;
   return true;
 }
@@ -679,7 +705,12 @@ void pollTCP(WiFiClient& client){
             xSemaphoreGive(dataMutex);
             lastNmeaDataMs = millis();
             if(parseNMEALine(nmeaLineBuf)) {
-              setOutputsDeg(0, angleDeg);
+              // Update DAC for all displays that have Logic Wind type
+              for (int i = 0; i < 3; i++) {
+                if (displays[i].enabled && strcmp(displays[i].type, "logicwind") == 0) {
+                  setOutputsDeg(i, 0); // deg parameter not used anymore
+                }
+              }
             }
             nmeaLineBufLen = 0;
           }
@@ -754,12 +785,16 @@ void pollUDP() {
             xSemaphoreTake(dataMutex, portMAX_DELAY);
             strncpy(lastSentenceRaw, nmeaLineBuf, sizeof(lastSentenceRaw) - 1);
             lastSentenceRaw[sizeof(lastSentenceRaw) - 1] = '\0';
-            int angle = angleDeg;
             xSemaphoreGive(dataMutex);
             
             lastNmeaDataMs = millis();
             if (parseNMEALine(nmeaLineBuf)) {
-              setOutputsDeg(0, angle);
+              // Update DAC for all displays that have Logic Wind type
+              for (int i = 0; i < 3; i++) {
+                if (displays[i].enabled && strcmp(displays[i].type, "logicwind") == 0) {
+                  setOutputsDeg(i, 0); // deg parameter not used anymore
+                }
+              }
             }
             nmeaLineBufLen = 0;
           }
@@ -852,7 +887,8 @@ void setup() {
   }
   
   if (dacReady) {
-    setOutputsDeg(0, angleDeg); // TODO: käytä oikeaa displayNum:ia
+    // Initialize DAC to 0 degrees for display 0
+    setOutputsDeg(0, 0);
   }
 
   // Initialize enabled displays

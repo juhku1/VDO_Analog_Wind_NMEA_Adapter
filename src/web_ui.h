@@ -17,6 +17,11 @@ struct DisplayConfig {
   int pulseDuty;         // Pulse duty %
   int pulsePin;          // GPIO pin
   int gotoAngle;         // Manual angle
+  
+  // Per-display wind data (protected by dataMutex)
+  float windSpeed_kn;    // Wind speed in knots for this display
+  int windAngle_deg;     // Wind angle in degrees for this display
+  uint32_t lastUpdate_ms; // Timestamp of last data update
 };
 
 // Global variables from wind_project.ino
