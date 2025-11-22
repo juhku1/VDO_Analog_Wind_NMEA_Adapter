@@ -28,6 +28,120 @@ const char* getDataTypeDescription(uint8_t dataType) {
   }
 }
 
+// Helper: Format time ago
+String formatTimeAgo(uint32_t lastUpdate_ms) {
+  if (lastUpdate_ms == 0) return "-";
+  
+  uint32_t now = millis();
+  uint32_t age_ms = now - lastUpdate_ms;
+  
+  if (age_ms < 1000) return "Just now";
+  if (age_ms < 60000) return String(age_ms / 1000) + "s ago";
+  if (age_ms < 3600000) return String(age_ms / 60000) + "m ago";
+  return String(age_ms / 3600000) + "h ago";
+}
+
+// Helper: Check which displays use this data type
+String getDisplaysUsing(uint8_t dataType) {
+  String result = "";
+  int count = 0;
+  
+  for (int i = 0; i < 3; i++) {
+    if (displays[i].enabled && displays[i].dataType == dataType) {
+      if (count > 0) result += ", ";
+      result += "Display " + String(i + 1);
+      count++;
+    }
+  }
+  
+  return count > 0 ? result : "-";
+}
+
+// Build data flow table HTML
+String buildDataFlowTable() {
+  String html = R"HTML(
+<fieldset>
+  <legend>Data Flow Overview</legend>
+  <p style="margin: 0 0 10px 0; color: #666; font-size: 13px;">
+    Shows available data sources and which displays use them
+  </p>
+  <table class="data-flow-table">
+    <thead>
+      <tr>
+        <th>Data Type</th>
+        <th>Speed</th>
+        <th>Angle</th>
+        <th>Source</th>
+        <th>Last Update</th>
+        <th>Used By</th>
+      </tr>
+    </thead>
+    <tbody>
+)HTML";
+
+  // Apparent Wind
+  if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    html += "<tr>";
+    html += "<td><strong>Apparent Wind</strong></td>";
+    html += "<td>" + String(apparent_hasData ? apparent_speed_kn : 0.0, 1) + " kn</td>";
+    html += "<td>" + String(apparent_hasData ? (int)apparent_angle_deg : 0) + "°</td>";
+    html += "<td>" + String(apparent_source) + "</td>";
+    html += "<td>" + formatTimeAgo(apparent_lastUpdate_ms) + "</td>";
+    html += "<td>" + getDisplaysUsing(DATA_APPARENT_WIND) + "</td>";
+    html += "</tr>";
+    
+    // True Wind
+    html += "<tr>";
+    html += "<td><strong>True Wind</strong></td>";
+    html += "<td>" + String(true_hasData ? true_speed_kn : 0.0, 1) + " kn</td>";
+    html += "<td>" + String(true_hasData ? (int)true_angle_deg : 0) + "°</td>";
+    html += "<td>" + String(true_source) + "</td>";
+    html += "<td>" + formatTimeAgo(true_lastUpdate_ms) + "</td>";
+    html += "<td>" + getDisplaysUsing(DATA_TRUE_WIND) + "</td>";
+    html += "</tr>";
+    
+    // VMG
+    html += "<tr>";
+    html += "<td><strong>VMG</strong></td>";
+    html += "<td>" + String(vmg_hasData ? vmg_kn : 0.0, 1) + " kn</td>";
+    html += "<td>-</td>";
+    html += "<td>Calculated</td>";
+    html += "<td>" + formatTimeAgo(vmg_lastUpdate_ms) + "</td>";
+    html += "<td>" + getDisplaysUsing(DATA_VMG) + "</td>";
+    html += "</tr>";
+    
+    // SOG
+    html += "<tr>";
+    html += "<td><strong>Speed Over Ground</strong></td>";
+    html += "<td>" + String(gps_hasSOG ? gps_sog_kn : 0.0, 1) + " kn</td>";
+    html += "<td>-</td>";
+    html += "<td>GPS (RMC/VTG)</td>";
+    html += "<td>" + formatTimeAgo(gps_lastUpdate_ms) + "</td>";
+    html += "<td>" + getDisplaysUsing(DATA_SOG) + "</td>";
+    html += "</tr>";
+    
+    // COG
+    html += "<tr>";
+    html += "<td><strong>Course Over Ground</strong></td>";
+    html += "<td>-</td>";
+    html += "<td>" + String(gps_hasCOG ? (int)gps_cog_deg : 0) + "°</td>";
+    html += "<td>GPS (RMC/VTG)</td>";
+    html += "<td>" + formatTimeAgo(gps_lastUpdate_ms) + "</td>";
+    html += "<td>" + getDisplaysUsing(DATA_COG) + "</td>";
+    html += "</tr>";
+    
+    xSemaphoreGive(dataMutex);
+  }
+  
+  html += R"HTML(
+    </tbody>
+  </table>
+</fieldset>
+)HTML";
+
+  return html;
+}
+
 // ---------- Page Templates ----------
 
 // Common header with navigation
@@ -123,6 +237,30 @@ footer {
   color: #888;
   padding: 8px 0;
   z-index: 10;
+}
+.data-flow-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 14px;
+}
+.data-flow-table th {
+  background: #f8f9fa;
+  padding: 8px;
+  text-align: left;
+  border-bottom: 2px solid #dee2e6;
+  font-weight: 600;
+  color: #495057;
+}
+.data-flow-table td {
+  padding: 8px;
+  border-bottom: 1px solid #dee2e6;
+}
+.data-flow-table tr:last-child td {
+  border-bottom: none;
+}
+.data-flow-table tr:hover {
+  background: #f8f9fa;
 }
 @media (max-width: 600px) {
   .card {
@@ -360,6 +498,8 @@ String buildStatusPage() {
     <span id=spd></span> kn
   </div>
 </fieldset>
+
+)HTML" + buildDataFlowTable() + R"HTML(
 
 <!-- Status Overview with Edit Buttons -->
 <fieldset>

@@ -50,6 +50,19 @@ float apparent_speed_kn = 0.0;
 float apparent_angle_deg = 0.0;
 bool apparent_hasData = false;
 uint32_t apparent_lastUpdate_ms = 0;
+char apparent_source[16] = "-";  // "MWV(R)", "VWR", etc.
+
+// True Wind data - protected by dataMutex
+float true_speed_kn = 0.0;
+float true_angle_deg = 0.0;
+bool true_hasData = false;
+uint32_t true_lastUpdate_ms = 0;
+char true_source[16] = "-";  // "MWV(T)", "VWT", "Calculated"
+
+// VMG data - protected by dataMutex
+float vmg_kn = 0.0;
+bool vmg_hasData = false;
+uint32_t vmg_lastUpdate_ms = 0;
 
 #define AP_SSID           "VDO-Cal"
 #define AP_PASS           "wind12345"
@@ -583,6 +596,30 @@ void updateDisplaysForSentence(const char* sentenceType, char reference, int ang
     }
     apparent_hasData = true;
     apparent_lastUpdate_ms = now;
+    
+    // Track source
+    if (strcmp(sentenceType, "MWV") == 0) {
+      snprintf(apparent_source, sizeof(apparent_source), "MWV(R)");
+    } else {
+      snprintf(apparent_source, sizeof(apparent_source), "VWR");
+    }
+  }
+  
+  // Store True Wind data
+  if ((strcmp(sentenceType, "MWV") == 0 && reference == 'T') || strcmp(sentenceType, "VWT") == 0) {
+    true_angle_deg = angle;
+    if (hasSpeed) {
+      true_speed_kn = speed;
+    }
+    true_hasData = true;
+    true_lastUpdate_ms = now;
+    
+    // Track source
+    if (strcmp(sentenceType, "MWV") == 0) {
+      snprintf(true_source, sizeof(true_source), "MWV(T)");
+    } else {
+      snprintf(true_source, sizeof(true_source), "VWT");
+    }
   }
   
   // Update displays that match sentence directly
@@ -612,6 +649,16 @@ void updateDisplaysForSentence(const char* sentenceType, char reference, int ang
   float trueSpeed, trueAngle;
   if (calculateTrueWind(trueSpeed, trueAngle)) {
     xSemaphoreTake(dataMutex, portMAX_DELAY);
+    
+    // Store calculated True Wind data
+    if (!true_hasData || (now - true_lastUpdate_ms) > 1000) {
+      true_speed_kn = trueSpeed;
+      true_angle_deg = trueAngle;
+      true_hasData = true;
+      true_lastUpdate_ms = now;
+      snprintf(true_source, sizeof(true_source), "Calculated");
+    }
+    
     for (int i = 0; i < 3; i++) {
       if (!displays[i].enabled) continue;
       
@@ -632,6 +679,12 @@ void updateDisplaysForSentence(const char* sentenceType, char reference, int ang
   float vmg;
   if (calculateVMG(vmg)) {
     xSemaphoreTake(dataMutex, portMAX_DELAY);
+    
+    // Store VMG data
+    vmg_kn = vmg;
+    vmg_hasData = true;
+    vmg_lastUpdate_ms = now;
+    
     for (int i = 0; i < 3; i++) {
       if (!displays[i].enabled) continue;
       

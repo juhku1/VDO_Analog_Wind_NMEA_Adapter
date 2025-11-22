@@ -58,6 +58,29 @@ extern char lastSentenceRaw[];
 extern char connProfileName[];
 extern bool hasMwvR;
 extern bool hasMwvT;
+
+// Data source tracking
+extern float apparent_speed_kn;
+extern float apparent_angle_deg;
+extern bool apparent_hasData;
+extern uint32_t apparent_lastUpdate_ms;
+extern char apparent_source[];
+
+extern float true_speed_kn;
+extern float true_angle_deg;
+extern bool true_hasData;
+extern uint32_t true_lastUpdate_ms;
+extern char true_source[];
+
+extern float vmg_kn;
+extern bool vmg_hasData;
+extern uint32_t vmg_lastUpdate_ms;
+
+extern float gps_sog_kn;
+extern float gps_cog_deg;
+extern bool gps_hasSOG;
+extern bool gps_hasCOG;
+extern uint32_t gps_lastUpdate_ms;
 extern bool hasVwr;
 extern bool hasVwt;
 extern bool freezeNMEA;
