@@ -9,8 +9,8 @@ enum { PROTO_UDP = 0, PROTO_TCP = 1, PROTO_HTTP = 2 };
 // Display configuration structure
 struct DisplayConfig {
   bool enabled;
-  String type;           // "logicwind" | "sumlog"
-  String sentence;       // "MWV" | "VWR" | "VWT"
+  char type[16];         // "logicwind" | "sumlog"
+  char sentence[8];      // "MWV" | "VWR" | "VWT"
   int offsetDeg;         // Logic Wind adjustment
   float sumlogK;         // Pulse per knot
   int sumlogFmax;        // Max frequency
@@ -19,9 +19,15 @@ struct DisplayConfig {
   int gotoAngle;         // Manual angle
 };
 
-// Globaalit muuttujat jotka sijaitsevat wind_project.ino:ssa
+// Global variables from wind_project.ino
 extern Preferences prefs;
 extern DisplayConfig displays[3];
+
+// FreeRTOS synchronization
+extern SemaphoreHandle_t dataMutex;
+extern SemaphoreHandle_t wifiMutex;
+extern SemaphoreHandle_t nvsMutex;
+extern SemaphoreHandle_t pauseAckSemaphore;
 
 // LEDC variables
 extern const uint8_t LEDC_CHANNELS[3];
@@ -31,9 +37,9 @@ extern float sumlog_speed_kn;
 extern int offsetDeg;
 extern int angleDeg;
 extern int lastAngleSent;
-extern String lastSentenceType;
-extern String lastSentenceRaw;
-extern String connProfileName;
+extern char lastSentenceType[];
+extern char lastSentenceRaw[];
+extern char connProfileName[];
 extern bool hasMwvR;
 extern bool hasMwvT;
 extern bool hasVwr;
@@ -41,9 +47,9 @@ extern bool hasVwt;
 extern bool freezeNMEA;
 extern uint8_t  nmeaProto;
 extern uint16_t nmeaPort;
-extern String   nmeaHost;
-extern volatile bool tcpConnected;  // TCP connection state (set by Core 1, read by Core 0)
-extern volatile bool udpConnected;  // UDP connection state (set by Core 1, read by Core 0)
+extern char nmeaHost[];
+extern volatile bool tcpConnected;
+extern volatile bool udpConnected;
 extern char sta_ssid[];
 extern char sta_pass[];
 extern char ap_pass[];
