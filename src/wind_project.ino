@@ -468,17 +468,39 @@ void updateDisplayPulse(int displayNum) {
   // Read per-display speed with mutex protection
   float currentSpeed;
   uint32_t lastUpdate;
+  uint8_t dataType;
   xSemaphoreTake(dataMutex, portMAX_DELAY);
   currentSpeed = disp.windSpeed_kn;
   lastUpdate = disp.lastUpdate_ms;
+  dataType = disp.dataType;
   xSemaphoreGive(dataMutex);
   
-  // Check for data timeout (4 seconds without NMEA data for this display)
-  uint32_t dataAge = millis() - lastUpdate;
-  if (dataAge > 4000) {
+  // Check for data timeout - both display data AND source data must be fresh
+  uint32_t now = millis();
+  uint32_t dataAge = now - lastUpdate;
+  bool sourceDataStale = false;
+  
+  // Check if the source data for this display type is stale
+  xSemaphoreTake(dataMutex, portMAX_DELAY);
+  if (dataType == DATA_APPARENT_WIND && apparent_hasData) {
+    sourceDataStale = (now - apparent_lastUpdate_ms) > DATA_TIMEOUT_MS;
+  } else if (dataType == DATA_TRUE_WIND && true_hasData) {
+    sourceDataStale = (now - true_lastUpdate_ms) > DATA_TIMEOUT_MS;
+  } else if (dataType == DATA_VMG && vmg_hasData) {
+    sourceDataStale = (now - vmg_lastUpdate_ms) > DATA_TIMEOUT_MS;
+  } else if (dataType == DATA_SOG && gps_hasSOG) {
+    sourceDataStale = (now - gps_lastUpdate_ms) > DATA_TIMEOUT_MS;
+  } else if (dataType == DATA_COG && gps_hasCOG) {
+    sourceDataStale = (now - gps_lastUpdate_ms) > DATA_TIMEOUT_MS;
+  }
+  xSemaphoreGive(dataMutex);
+  
+  // Zero speed if either display data or source data is stale
+  if (dataAge > DATA_TIMEOUT_MS || sourceDataStale) {
     currentSpeed = 0.0f;
     if (lastFreq[displayNum] != 0) {
-      Serial.printf("Display %d timeout! Last data %u ms ago - zeroing speed\n", displayNum, dataAge);
+      Serial.printf("Display %d timeout! Display age=%u ms, source stale=%d - zeroing speed\n", 
+                    displayNum, dataAge, sourceDataStale);
     }
   }
   
