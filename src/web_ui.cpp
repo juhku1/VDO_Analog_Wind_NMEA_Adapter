@@ -66,6 +66,7 @@ static void handleDisplayAPI() {
       String json = "{";
       json += "\"enabled\":" + String(displays[arrayIndex].enabled ? "true" : "false");
       json += ",\"type\":\"" + String(displays[arrayIndex].type) + "\"";
+      json += ",\"dataType\":" + String(displays[arrayIndex].dataType);
       json += ",\"sentence\":\"" + String(displays[arrayIndex].sentence) + "\"";
       json += ",\"offsetDeg\":" + String(displays[arrayIndex].offsetDeg);
       json += ",\"sumlogK\":" + String(displays[arrayIndex].sumlogK);

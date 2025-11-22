@@ -3,6 +3,27 @@
 #include "web_ui.h"
 #include <Arduino.h>
 
+// Data type names for UI
+const char* getDataTypeName(uint8_t dataType) {
+  switch(dataType) {
+    case DATA_APPARENT_WIND: return "Apparent Wind";
+    case DATA_TRUE_WIND: return "True Wind";
+    case DATA_VMG: return "VMG";
+    case DATA_GROUND_WIND: return "Ground Wind";
+    default: return "Unknown";
+  }
+}
+
+const char* getDataTypeDescription(uint8_t dataType) {
+  switch(dataType) {
+    case DATA_APPARENT_WIND: return "Wind relative to boat (from MWV R or VWR)";
+    case DATA_TRUE_WIND: return "True wind (from MWV T, VWT, or calculated from Apparent + GPS)";
+    case DATA_VMG: return "Velocity Made Good (from GPS)";
+    case DATA_GROUND_WIND: return "Wind relative to ground (future)";
+    default: return "";
+  }
+}
+
 // ---------- Page Templates ----------
 
 // Common header with navigation
@@ -1202,13 +1223,13 @@ String buildDisplayPage(int displayNum) {
   </div>
   
   <div class="row display_config_row">
-    <label>NMEA Sentence</label>
-    <select id=displaySentence>
-      <option value="MWV">MWV (Wind Speed & Angle)</option>
-      <option value="VWR">VWR (Relative Wind)</option>
-      <option value="VWT">VWT (True Wind)</option>
+    <label>Wind Data Type</label>
+    <select id=displayDataType>
+      <option value="0">Apparent Wind</option>
+      <option value="1">True Wind</option>
+      <option value="2">VMG (Velocity Made Good)</option>
     </select>
-    <span class="info-icon" data-tooltip="Which NMEA sentence to use for wind data">i</span>
+    <span class="info-icon" data-tooltip="Apparent Wind: Wind relative to boat. True Wind: Calculated or from NMEA. VMG: Speed from GPS">i</span>
   </div>
 </fieldset>
 
@@ -1304,7 +1325,7 @@ async function setDisplayEnabled(){
 async function saveDisplaySettings(){
   const enabled = document.getElementById('displayEnabled').checked;
   const type = document.getElementById('displayType').value;
-  const sentence = document.getElementById('displaySentence').value;
+  const dataType = document.getElementById('displayDataType').value;
   const offsetDeg = document.getElementById('offsetDeg').value;
   const gotoAngle = document.getElementById('gotoAngle').value;
   const sumlogK = document.getElementById('sumlogK').value;
@@ -1316,7 +1337,7 @@ async function saveDisplaySettings(){
   const params = new URLSearchParams({
     enabled: enabled?1:0,
     type: type,
-    sentence: sentence,
+    dataType: dataType,
     offsetDeg: offsetDeg,
     gotoAngle: gotoAngle,
     sumlogK: sumlogK,
@@ -1348,7 +1369,7 @@ async function loadDisplayValues() {
     
     document.getElementById('displayEnabled').checked = j.enabled || false;
     document.getElementById('displayType').value = j.type || "sumlog";
-    document.getElementById('displaySentence').value = j.sentence || "MWV";
+    document.getElementById('displayDataType').value = j.dataType !== undefined ? j.dataType : 0;
     document.getElementById('offsetDeg').value = j.offsetDeg || 0;
     document.getElementById('gotoAngle').value = j.gotoAngle || 0;
     document.getElementById('sumlogK').value = j.sumlogK || 1.0;
