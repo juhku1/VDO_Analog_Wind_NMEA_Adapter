@@ -742,9 +742,11 @@ String buildSinglePage() {
         // Load status to get wind unit preference
         const statusResp = await fetch('/status');
         const statusData = await statusResp.json();
+        console.log('Status data wind_unit:', statusData.wind_unit);
         if (statusData.wind_unit !== undefined) {
           document.getElementById('windUnit').value = statusData.wind_unit;
           window.windSpeedUnit = statusData.wind_unit;  // Store globally for display
+          console.log('Set windUnit dropdown to:', statusData.wind_unit);
         }
         
         // Load direction source and offset
@@ -836,16 +838,19 @@ String buildSinglePage() {
     // Network form submission
     document.getElementById('networkForm').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const windUnitValue = document.getElementById('windUnit').value;
+      console.log('Submitting wind_unit:', windUnitValue);
       const formData = new URLSearchParams({
         sta_ssid: document.getElementById('ssid').value,
         sta_pass: document.getElementById('password').value,
         ap_pass: document.getElementById('apPassword').value,
-        wind_unit: document.getElementById('windUnit').value,
+        wind_unit: windUnitValue,
         p1_host: document.getElementById('nmeaHost').value,
         p1_port: document.getElementById('nmeaPort').value,
         p1_proto: document.getElementById('nmeaProto').value,
         p2_port: document.getElementById('udpPort').value
       });
+      console.log('Form data:', Object.fromEntries(formData));
       
       try {
         const response = await fetch('/savecfg', {
