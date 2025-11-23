@@ -410,8 +410,10 @@ String buildSinglePage() {
           <input type="password" id="password" placeholder="Leave blank to keep current">
         </div>
         
+        <h3>TCP Connection</h3>
+        
         <div class="form-group">
-          <label for="nmeaHost">NMEA Server Host</label>
+          <label for="nmeaHost">TCP Host</label>
           <input type="text" id="nmeaHost" value=")rawliteral";
   
   html += String(nmeaHost);
