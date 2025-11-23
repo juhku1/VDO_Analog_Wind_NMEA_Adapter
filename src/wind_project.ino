@@ -630,6 +630,9 @@ void setup() {
   // Initialize WiFi FIRST to reduce power draw during DAC init
   Serial.printf("[3/8] Starting WiFi AP... (t=%lums)\n", millis() - setupStart);
   WiFi.mode(WIFI_AP_STA);
+  
+  // Reduce WiFi TX power during startup to prevent brownout
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);  // Reduce from default 20dBm to 8.5dBm
   delay(100);
   
   // Varmista että ap_pass ei ole tyhjä
@@ -664,6 +667,9 @@ void setup() {
     dacReady = true;
     Serial.println("    GP8403 init OK");
   }
+  
+  // Add delay after DAC init to stabilize power before continuing
+  delay(100);
   
   if (dacReady) {
     // LITE Multi: Initialize DAC to 0 degrees
@@ -703,6 +709,11 @@ void setup() {
     1                      // Core 1 (0=Core 0, 1=Core 1)
   );
   Serial.printf("    NMEA polling task created on Core 1 (t=%lums)\n", millis() - setupStart);
+  
+  // Restore normal WiFi power after startup (brownout risk is lower now)
+  WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Restore to near-max power for better range
+  Serial.println("    WiFi power restored to normal");
+  
   Serial.printf("\n=== Setup complete - System ready (total: %lums) ===\n\n", millis() - setupStart);
   
   // Simple toggle endpoints for NMEA processing
