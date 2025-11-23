@@ -427,7 +427,10 @@ String buildSinglePage() {
       </div>
     </div>
 
-    <!-- Direction Configuration -->
+    </div> <!-- End Status Tab -->
+
+    <!-- Configuration Tab -->
+    <div id="configTab" class="tab-content">
     <div class="card">
       <h2>🧭 Direction Output (shared by all Logic Wind instruments)</h2>
       <form id="directionForm">
@@ -436,7 +439,6 @@ String buildSinglePage() {
           <select id="directionSource">
             <option value="0">Apparent Wind Angle</option>
             <option value="1">True Wind Angle</option>
-            <option value="3">Course Over Ground (COG)</option>
           </select>
           <p class="info-text">All Logic Wind instruments will show this direction via DAC output.</p>
         </div>
@@ -613,38 +615,6 @@ String buildSinglePage() {
           <button type="submit">💾 Save Pulse 3</button>
         </form>
       </div>
-    </div>
-
-    </div> <!-- End Status Tab -->
-
-    <!-- Configuration Tab -->
-    <div id="configTab" class="tab-content">
-    <div class="card">
-      <h2>🧭 Direction Output (shared by all Logic Wind instruments)</h2>
-      <form id="directionForm">
-        <div class="form-group">
-          <label for="directionSource">Direction Source</label>
-          <select id="directionSource">
-            <option value="0">Apparent Wind Angle</option>
-            <option value="1">True Wind Angle</option>
-          </select>
-          <p class="info-text">All Logic Wind instruments will show this direction via DAC output.</p>
-        </div>
-        
-        <div class="form-group">
-          <label for="directionOffset">Direction Offset (degrees)</label>
-          <input type="number" id="directionOffset" min="-180" max="180" value="0">
-          <p class="info-text">Calibration offset for direction output (-180 to +180)</p>
-        </div>
-        
-        <button type="submit">💾 Save Direction Settings</button>
-      </form>
-    </div>
-
-    <!-- Speed Pulse Outputs -->
-    <div class="card">
-      <h2>⚡ Speed Pulse Outputs</h2>
-      <p class="info-text">Configure up to 3 independent speed pulse outputs for different instruments.</p>
     </div>
 
     </div> <!-- End Configuration Tab -->
