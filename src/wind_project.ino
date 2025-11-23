@@ -466,9 +466,17 @@ void pollTCP(WiFiClient& client){
             lastNmeaDataMs = millis();
             lastTcpDataMs = millis();
             if(parseNMEALine(nmeaLineBuf)) {
-              // LITE Multi: Update direction immediately when new NMEA data arrives
+              // LITE Multi: Update outputs immediately when new NMEA data arrives
               // This provides faster response than waiting for 50ms loop update
               updateDirectionOutput();
+              
+              // Update speed pulse outputs for all enabled displays
+              for (int i = 0; i < 3; i++) {
+                if (speedPulses[i].enabled) {
+                  updateSpeedPulseSpeed(i);   // Update speed from selected source
+                  updateSpeedPulse(i);         // Update pulse frequency
+                }
+              }
             }
             nmeaLineBufLen = 0;
           }
@@ -548,9 +556,17 @@ void pollUDP() {
             lastNmeaDataMs = millis();
             lastUdpDataMs = millis();
             if (parseNMEALine(nmeaLineBuf)) {
-              // LITE Multi: Update direction immediately when new NMEA data arrives
+              // LITE Multi: Update outputs immediately when new NMEA data arrives
               // This provides faster response than waiting for 50ms loop update
               updateDirectionOutput();
+              
+              // Update speed pulse outputs for all enabled displays
+              for (int i = 0; i < 3; i++) {
+                if (speedPulses[i].enabled) {
+                  updateSpeedPulseSpeed(i);   // Update speed from selected source
+                  updateSpeedPulse(i);         // Update pulse frequency
+                }
+              }
             }
             nmeaLineBufLen = 0;
           }
