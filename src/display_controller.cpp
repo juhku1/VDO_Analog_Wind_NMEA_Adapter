@@ -23,6 +23,7 @@ extern int lastAngleSent;
 
 extern uint8_t directionSource;
 extern int directionAngle;
+extern int directionOffset;
 
 // LITE Plus: Multiple data sources
 extern float apparent_speed_kn;
@@ -41,6 +42,10 @@ extern bool gps_hasSOG;
 extern bool gps_hasCOG;
 extern uint32_t gps_lastUpdate_ms;
 
+extern float vmg_kn;
+extern bool vmg_hasData;
+extern uint32_t vmg_lastUpdate_ms;
+
 /* ========= Helper Functions ========= */
 
 int mvClamp(int mv){ 
@@ -52,8 +57,8 @@ int mvClamp(int mv){
 /* ========= DAC Output ========= */
 
 void setDirectionOutput(int deg){
-  // LITE Multi: Use global direction (no per-display offset)
-  int adj = wrap360(deg);
+  // LITE Multi: Apply global direction offset
+  int adj = wrap360(deg + directionOffset);
   float r = adj * DEG_TO_RAD;
   float s = sinf(r), c = cosf(r);
   float amp = DAC_VAMP_BASE;
@@ -167,6 +172,13 @@ void updateSpeedPulseSpeed(int displayNum) {
       speedPulses[displayNum].currentSpeed_kn = 0;
       if (gps_hasCOG && (now - gps_lastUpdate_ms) < DATA_TIMEOUT_MS) {
         speedPulses[displayNum].lastUpdate_ms = gps_lastUpdate_ms;
+      }
+      break;
+      
+    case DATA_VMG:
+      if (vmg_hasData && (now - vmg_lastUpdate_ms) < DATA_TIMEOUT_MS) {
+        speedPulses[displayNum].currentSpeed_kn = vmg_kn;
+        speedPulses[displayNum].lastUpdate_ms = vmg_lastUpdate_ms;
       }
       break;
   }

@@ -35,8 +35,10 @@ extern char true_source[16];
 // GPS data
 extern float gps_sog_kn;
 extern float gps_cog_deg;
+extern float gps_heading_deg;
 extern bool gps_hasSOG;
 extern bool gps_hasCOG;
+extern bool gps_hasHeading;
 extern uint32_t gps_lastUpdate_ms;
 
 /* ========= Validation Functions ========= */
@@ -260,12 +262,56 @@ bool parseVWT(char* line){
 
 /* ========= Main Parser Dispatcher ========= */
 
+// Parse HDT: $xxHDT,heading,T*checksum (True Heading)
+bool parseHDT(char* line){
+  char* f[5]; int n = splitCSV(line, f, 5);
+  if(n<2) return false;
+  if(!hasFormatter(line,"HDT")) return false;
+  if(!nmeaChecksumOK(line)) return false;
+  
+  float heading = atof(f[1]);
+  
+  if(heading >= 0 && heading <= 360) {
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    gps_heading_deg = heading;
+    gps_hasHeading = true;
+    gps_lastUpdate_ms = millis();
+    xSemaphoreGive(dataMutex);
+    
+    Serial.printf("HDT: Heading=%.1f° (true)\n", heading);
+    return true;
+  }
+  return false;
+}
+
+// Parse HDM: $xxHDM,heading,M*checksum (Magnetic Heading)
+bool parseHDM(char* line){
+  char* f[5]; int n = splitCSV(line, f, 5);
+  if(n<2) return false;
+  if(!hasFormatter(line,"HDM")) return false;
+  if(!nmeaChecksumOK(line)) return false;
+  
+  float heading = atof(f[1]);
+  
+  if(heading >= 0 && heading <= 360) {
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    gps_heading_deg = heading;
+    gps_hasHeading = true;
+    gps_lastUpdate_ms = millis();
+    xSemaphoreGive(dataMutex);
+    
+    Serial.printf("HDM: Heading=%.1f° (magnetic)\n", heading);
+    return true;
+  }
+  return false;
+}
+
 bool parseNMEALine(char* line){
   if(strlen(line)<6 || line[0]!='$') return false;
   static char tmp[256];
   size_t L = min(strlen(line), sizeof(tmp)-1);
   
-  // LITE Plus: Wind sentences (Apparent + True)
+  // LITE Multi: Wind sentences (Apparent + True)
   memcpy(tmp, line, L); tmp[L]=0;
   if(hasFormatter(tmp,"MWV") && parseMWV(tmp)) return true;
   memcpy(tmp,line,L); tmp[L]=0;
@@ -278,6 +324,12 @@ bool parseNMEALine(char* line){
   if(hasFormatter(tmp,"RMC") && parseRMC(tmp)) return true;
   memcpy(tmp,line,L); tmp[L]=0;
   if(hasFormatter(tmp,"VTG") && parseVTG(tmp)) return true;
+  
+  // Heading sentences
+  memcpy(tmp,line,L); tmp[L]=0;
+  if(hasFormatter(tmp,"HDT") && parseHDT(tmp)) return true;
+  memcpy(tmp,line,L); tmp[L]=0;
+  if(hasFormatter(tmp,"HDM") && parseHDM(tmp)) return true;
   
   return false;
 }

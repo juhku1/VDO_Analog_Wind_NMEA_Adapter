@@ -188,6 +188,11 @@ String buildSinglePage() {
           <div class="status-value" id="sogValue">--<span class="status-unit">kn</span></div>
           <div class="info-text" id="cogValue">COG: -- °</div>
         </div>
+        <div class="status-item">
+          <div class="status-label">VMG</div>
+          <div class="status-value" id="vmgValue">--<span class="status-unit">kn</span></div>
+          <div class="info-text">Velocity Made Good</div>
+        </div>
       </div>
     </div>
 
@@ -204,7 +209,14 @@ String buildSinglePage() {
           </select>
           <p class="info-text">All Logic Wind instruments will show this direction via DAC output.</p>
         </div>
-        <button type="submit">💾 Save Direction Source</button>
+        
+        <div class="form-group">
+          <label for="directionOffset">Direction Offset (degrees)</label>
+          <input type="number" id="directionOffset" min="-180" max="180" value="0">
+          <p class="info-text">Calibration offset for direction output (-180 to +180)</p>
+        </div>
+        
+        <button type="submit">💾 Save Direction Settings</button>
       </form>
     </div>
 
@@ -237,6 +249,7 @@ String buildSinglePage() {
               <option value="0">Apparent Wind Speed</option>
               <option value="1">True Wind Speed</option>
               <option value="2">Speed Over Ground (SOG)</option>
+              <option value="4">VMG (Velocity Made Good)</option>
             </select>
           </div>
           
@@ -289,6 +302,7 @@ String buildSinglePage() {
               <option value="0">Apparent Wind Speed</option>
               <option value="1">True Wind Speed</option>
               <option value="2">Speed Over Ground (SOG)</option>
+              <option value="4">VMG (Velocity Made Good)</option>
             </select>
           </div>
           
@@ -341,6 +355,7 @@ String buildSinglePage() {
               <option value="0">Apparent Wind Speed</option>
               <option value="1">True Wind Speed</option>
               <option value="2">Speed Over Ground (SOG)</option>
+              <option value="4">VMG (Velocity Made Good)</option>
             </select>
           </div>
           
@@ -433,11 +448,14 @@ String buildSinglePage() {
     // Load initial configuration
     async function loadConfig() {
       try {
-        // Load direction source
-        const dirResp = await fetch('/api/status');
+        // Load direction source and offset
+        const dirResp = await fetch('/api/direction');
         const dirData = await dirResp.json();
-        if (dirData.globalDirSource !== undefined) {
-          document.getElementById('directionSource').value = dirData.globalDirSource;
+        if (dirData.source !== undefined) {
+          document.getElementById('directionSource').value = dirData.source;
+        }
+        if (dirData.offset !== undefined) {
+          document.getElementById('directionOffset').value = dirData.offset;
         }
         
         // Load pulse configurations
@@ -468,17 +486,18 @@ String buildSinglePage() {
     document.getElementById('directionForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const dirSource = document.getElementById('directionSource').value;
+      const dirOffset = document.getElementById('directionOffset').value;
       
       try {
         const response = await fetch('/api/direction', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: `source=${dirSource}`
+          body: `source=${dirSource}&offset=${dirOffset}`
         });
         if (response.ok) {
-          alert('✅ Direction source saved!');
+          alert('✅ Direction settings saved!');
         } else {
-          alert('❌ Failed to save direction source');
+          alert('❌ Failed to save direction settings');
         }
       } catch (error) {
         alert('❌ Error: ' + error.message);
@@ -579,6 +598,12 @@ String buildSinglePage() {
         if (data.cog) {
           document.getElementById('cogValue').textContent = 
             'COG: ' + (data.cog.angle || 0) + '°';
+        }
+        
+        // Update VMG
+        if (data.vmg) {
+          document.getElementById('vmgValue').innerHTML = 
+            (data.vmg.speed || 0).toFixed(1) + '<span class="status-unit">kn</span>';
         }
       } catch (error) {
         console.error('Status update failed:', error);

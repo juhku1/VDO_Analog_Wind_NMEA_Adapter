@@ -7,8 +7,7 @@
 #include "web_ui.h"
 #include "nmea_parser.h"
 #include "display_controller.h"
-
-// LITE: wind_calculations.h removed
+#include "wind_calculations.h"  // LITE Multi: True Wind and VMG calculations
 
 // LEDC for hardware PWM pulse generation
 #define LEDC_TIMER_RESOLUTION    10
@@ -47,6 +46,7 @@ SpeedPulseConfig speedPulses[3];
 // LITE Multi: Global direction (shared by all Logic Wind instruments)
 uint8_t directionSource = DATA_APPARENT_WIND;  // Default: Apparent Wind angle
 int directionAngle = 0;
+int directionOffset = 0;  // Calibration offset (-180 to +180)
 
 // LEDC channels for 3 displays
 const uint8_t LEDC_CHANNELS[3] = {0, 1, 2};
@@ -75,13 +75,20 @@ float true_speed_kn = 0.0;
 float true_angle_deg = 0.0;
 bool true_hasData = false;
 uint32_t true_lastUpdate_ms = 0;
-char true_source[16] = "-";  // "MWV(T)", "VWT"
+char true_source[16] = "-";  // "MWV(T)", "VWT", "Calculated"
+
+// VMG data (calculated)
+float vmg_kn = 0.0;
+bool vmg_hasData = false;
+uint32_t vmg_lastUpdate_ms = 0;
 
 // GPS data
 float gps_sog_kn = 0.0;        // Speed Over Ground (knots)
 float gps_cog_deg = 0.0;       // Course Over Ground (degrees)
+float gps_heading_deg = 0.0;   // True Heading (from HDT/HDM)
 bool gps_hasSOG = false;
 bool gps_hasCOG = false;
+bool gps_hasHeading = false;
 uint32_t gps_lastUpdate_ms = 0;
 
 #define AP_SSID           "VDO-Cal"
@@ -185,8 +192,9 @@ void saveSpeedPulseConfig(int displayNum) {
   prefs.begin(NVS_NAMESPACE, false);
   
   if (displayNum == -1) {
-    // Save all displays + global direction
+    // Save all displays + global direction + offset
     prefs.putUChar("global_dir", directionSource);
+    prefs.putInt("dir_offset", directionOffset);
     
     for (int i = 0; i < 3; i++) {
       char key[16];
@@ -231,8 +239,9 @@ void saveSpeedPulseConfig(int displayNum) {
 void loadConfig(){
   prefs.begin(NVS_NAMESPACE, false);
   
-  // LITE Multi: Load global direction source
+  // LITE Multi: Load global direction source and offset
   directionSource = prefs.getUChar("global_dir", DATA_APPARENT_WIND);
+  directionOffset = prefs.getInt("dir_offset", 0);
   
   // LITE Multi: Load 3 displays
   for (int i = 0; i < 3; i++) {
@@ -663,11 +672,12 @@ void loop() {
   // Check for data timeout every 100ms (ensures speed/direction zero when connection is lost)
   if (now - lastTimeoutCheck > 100) {
     lastTimeoutCheck = now;
-    updateDirectionOutput();  // LITE Multi: update global direction
+    updateCalculations();         // LITE Multi: calculate True Wind and VMG
+    updateDirectionOutput();      // LITE Multi: update global direction
     for (int i = 0; i < 3; i++) {
       if (speedPulses[i].enabled) {
         updateSpeedPulseSpeed(i);   // Update speed from selected source
-        updateSpeedPulse(i);   // Update pulse output
+        updateSpeedPulse(i);         // Update pulse output
       }
     }
   }

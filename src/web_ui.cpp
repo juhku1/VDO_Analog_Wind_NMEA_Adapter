@@ -403,6 +403,14 @@ static void handleDataFlow() {
     j += ",\"age\":"; j += gps_hasCOG ? String(now - gps_lastUpdate_ms) : "999999";
     j += "}";
     
+    // VMG
+    j += ",\"vmg\":{";
+    j += "\"speed\":"; j += vmg_hasData ? String(vmg_kn, 1) : "0";
+    j += ",\"angle\":0";
+    j += ",\"source\":\"Calculated\"";
+    j += ",\"age\":"; j += vmg_hasData ? String(now - vmg_lastUpdate_ms) : "999999";
+    j += "}";
+    
     // Display info (LITE Multi)
     j += ",\"globalDirSource\":"; j += directionSource;
     j += ",\"displays\":[";
@@ -427,27 +435,42 @@ static void handleDataFlow() {
 // LITE Multi: Direction source API
 static void handleDirectionAPI() {
   if (g_srv->method() == HTTP_POST) {
+    bool updated = false;
+    
     if (g_srv->hasArg("source")) {
       int src = g_srv->arg("source").toInt();
-      if (src >= 0 && src <= 3) {
+      if (src >= 0 && src <= 4) {  // 0-4 valid (including VMG)
         directionSource = (uint8_t)src;
-        
-        // Save to NVS
-        xSemaphoreTake(nvsMutex, portMAX_DELAY);
-        prefs.begin(NVS_NAMESPACE, false);
-        prefs.putUChar("global_dir", directionSource);
-        prefs.end();
-        xSemaphoreGive(nvsMutex);
-        
-        g_srv->send(200, "text/plain", "OK");
-        return;
+        updated = true;
       }
     }
-    g_srv->send(400, "text/plain", "Invalid source");
+    
+    if (g_srv->hasArg("offset")) {
+      int offset = g_srv->arg("offset").toInt();
+      if (offset >= -180 && offset <= 180) {
+        directionOffset = offset;
+        updated = true;
+      }
+    }
+    
+    if (updated) {
+      // Save to NVS
+      xSemaphoreTake(nvsMutex, portMAX_DELAY);
+      prefs.begin(NVS_NAMESPACE, false);
+      prefs.putUChar("global_dir", directionSource);
+      prefs.putInt("dir_offset", directionOffset);
+      prefs.end();
+      xSemaphoreGive(nvsMutex);
+      
+      g_srv->send(200, "text/plain", "OK");
+    } else {
+      g_srv->send(400, "text/plain", "Invalid parameters");
+    }
   } else {
-    // GET: return current direction source
+    // GET: return current direction source and offset
     String json = "{";
     json += "\"source\":" + String(directionSource);
+    json += ",\"offset\":" + String(directionOffset);
     json += ",\"angle\":" + String(directionAngle);
     json += "}";
     g_srv->send(200, "application/json", json);

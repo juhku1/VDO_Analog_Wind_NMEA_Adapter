@@ -26,12 +26,13 @@ constexpr uint8_t CH_COS = 1;
 // Enum protokollille
 enum { PROTO_UDP = 0, PROTO_TCP = 1, PROTO_HTTP = 2 };
 
-// LITE Plus: Wind data types (selectable)
+// LITE Multi: Wind data types (selectable)
 enum WindDataType {
   DATA_APPARENT_WIND = 0,  // Apparent Wind (näennäistuuli) - from MWV(R) or VWR
-  DATA_TRUE_WIND = 1,      // True Wind (todellinen tuuli) - from MWV(T) or VWT
+  DATA_TRUE_WIND = 1,      // True Wind (todellinen tuuli) - from MWV(T), VWT, or calculated
   DATA_SOG = 2,            // Speed Over Ground - from GPS (RMC/VTG)
-  DATA_COG = 3             // Course Over Ground - from GPS (RMC/VTG)
+  DATA_COG = 3,            // Course Over Ground - from GPS (RMC/VTG)
+  DATA_VMG = 4             // Velocity Made Good - calculated (SOG × cos(TWA))
 };
 
 // LITE Multi: Speed Pulse Output configuration
@@ -56,6 +57,7 @@ extern SpeedPulseConfig speedPulses[3];  // LITE Multi: 3 speed pulse outputs
 // LITE Multi: Global direction (shared by all Logic Wind instruments)
 extern uint8_t directionSource;  // Which data source for DIRECTION
 extern int directionAngle;       // Current global direction
+extern int directionOffset;      // Calibration offset for direction (-180 to +180)
 
 // FreeRTOS synchronization
 extern SemaphoreHandle_t dataMutex;
@@ -95,6 +97,10 @@ extern float gps_cog_deg;
 extern bool gps_hasSOG;
 extern bool gps_hasCOG;
 extern uint32_t gps_lastUpdate_ms;
+
+extern float vmg_kn;
+extern bool vmg_hasData;
+extern uint32_t vmg_lastUpdate_ms;
 
 extern bool hasVwr;
 extern bool hasMwvT;
