@@ -166,6 +166,10 @@ String buildSinglePage() {
   String source = String(apparent_source);
   xSemaphoreGive(dataMutex);
   
+  // Debug logging
+  Serial.printf("Web UI: speed=%.1f, angle=%d, hasData=%d, age=%u ms, source=%s\n", 
+                speed, angle, hasData, millis() - lastUpdate, source.c_str());
+  
   if (hasData && (millis() - lastUpdate) < DATA_TIMEOUT_MS) {
     html += String(speed, 1);
     html += "<span class=\"status-unit\">kn</span>";

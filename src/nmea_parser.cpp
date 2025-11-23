@@ -94,6 +94,8 @@ bool parseMWV(char* line){
     display.lastUpdate_ms = millis();
     xSemaphoreGive(dataMutex);
     
+    Serial.printf("MWV(R): angle=%d°, speed=%.1f kn, hasSpeed=%d\n", newAngle, newSpeed, hasSpeed);
+    
     hasMwvR = true;
     return true;
   }
@@ -138,6 +140,8 @@ bool parseVWR(char* line){
   }
   display.lastUpdate_ms = millis();
   xSemaphoreGive(dataMutex);
+  
+  Serial.printf("VWR: angle=%d°, speed=%.1f kn, hasSpeed=%d\n", newAngle, newSpeed, hasSpeed);
   
   hasVwr = true;
   return true;
