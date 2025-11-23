@@ -113,7 +113,6 @@ extern uint16_t nmeaPort;
 extern char nmeaHost[];
 extern volatile bool tcpConnected;
 extern volatile bool udpConnected;
-extern uint8_t windSpeedUnit;  // 0=knots, 1=m/s
 
 // Separate NMEA tracking for TCP and UDP
 extern char lastTcpSentence[];

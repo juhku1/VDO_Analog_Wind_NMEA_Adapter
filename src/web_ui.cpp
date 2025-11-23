@@ -162,9 +162,6 @@ static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1
   // WiFi Settings (single profile only)
   String w1_ssid = g_srv->arg("w1_ssid");
   String w1_pass = g_srv->arg("w1_pass");
-  
-  // Wind speed unit preference
-  String windUnit = g_srv->arg("wind_unit");
 
   // Pause NMEA polling task to prevent race condition
   extern volatile bool pauseNmeaPoll;
@@ -201,17 +198,6 @@ static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1
   // WiFi Settings (single profile only)
   if (w1_ssid.length() > 0) prefs.putString("w1_ssid", w1_ssid);
   if (w1_pass.length() > 0) prefs.putString("w1_pass", w1_pass);
-  
-  // Wind speed unit
-  if (windUnit.length() > 0) {
-    uint8_t unit = windUnit.toInt();
-    Serial.printf("[handleSaveCfg] Wind unit received: %s -> %d\n", windUnit.c_str(), unit);
-    if (unit <= 1) {  // 0=knots, 1=m/s
-      prefs.putUChar("wind_unit", unit);
-      windSpeedUnit = unit;
-      Serial.printf("[handleSaveCfg] Wind unit saved: %d\n", unit);
-    }
-  }
 
   // Add to connection history if P1 changed
   if (p1_host.length() > 0 && p1_port.length() > 0) {
@@ -390,7 +376,6 @@ static void handleStatus(){
   j += ",\"w2_pass\":\""; j += prefs.getString("w2_pass", ""); j += "\"";
   j += ",\"ap_pass\":\""; j += prefs.getString("ap_pass", "wind12345"); j += "\"";
   j += ",\"nmea_data_age\":"; j += (millis() - lastNmeaDataMs);
-  j += ",\"wind_unit\":"; j += windSpeedUnit;
   j += "}";
   g_srv->send(200, "application/json", j);
 }

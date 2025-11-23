@@ -323,7 +323,7 @@ String buildSinglePage() {
           <div>
             <span class="data-label">Speed:</span>
             <span class="data-value" id="aws-speed">--</span>
-            <span class="data-unit wind-unit">kn</span>
+            <span class="data-unit">kn</span>
           </div>
           <div>
             <span class="data-label">Angle:</span>
@@ -345,7 +345,7 @@ String buildSinglePage() {
           <div>
             <span class="data-label">Speed:</span>
             <span class="data-value" id="tws-speed">--</span>
-            <span class="data-unit wind-unit">kn</span>
+            <span class="data-unit">kn</span>
           </div>
           <div>
             <span class="data-label">Angle:</span>
@@ -640,17 +640,6 @@ String buildSinglePage() {
           <input type="password" id="password" placeholder="Leave blank to keep current">
         </div>
         
-        <h3>Display Preferences</h3>
-        
-        <div class="form-group">
-          <label for="windUnit">Wind Speed Unit</label>
-          <select id="windUnit">
-            <option value="0">Knots (kn)</option>
-            <option value="1">Meters per second (m/s)</option>
-          </select>
-          <p class="info-text">ℹ️ Choose how wind speeds are displayed in the UI</p>
-        </div>
-        
         <h3>Access Point (AP) Settings</h3>
         
         <div class="form-group">
@@ -754,12 +743,6 @@ String buildSinglePage() {
         // Load status to get wind unit preference
         const statusResp = await fetch('/status');
         const statusData = await statusResp.json();
-        console.log('Status data wind_unit:', statusData.wind_unit);
-        if (statusData.wind_unit !== undefined) {
-          document.getElementById('windUnit').value = statusData.wind_unit;
-          window.windSpeedUnit = statusData.wind_unit;  // Store globally for display
-          console.log('Set windUnit dropdown to:', statusData.wind_unit);
-        }
         
         // Load direction source and offset
         const dirResp = await fetch('/api/direction');
@@ -850,13 +833,10 @@ String buildSinglePage() {
     // Network form submission
     document.getElementById('networkForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const windUnitValue = document.getElementById('windUnit').value;
-      console.log('Submitting wind_unit:', windUnitValue);
       const formData = new URLSearchParams({
         sta_ssid: document.getElementById('ssid').value,
         sta_pass: document.getElementById('password').value,
         ap_pass: document.getElementById('apPassword').value,
-        wind_unit: windUnitValue,
         p1_host: document.getElementById('nmeaHost').value,
         p1_port: document.getElementById('nmeaPort').value,
         p1_proto: document.getElementById('nmeaProto').value,
@@ -896,29 +876,9 @@ String buildSinglePage() {
           return Math.floor(age/3600000) + 'h ago';
         };
         
-        // Helper: convert wind speed based on unit preference (0=knots, 1=m/s)
-        // Only for wind speeds (AWS, TWS) - boat speeds (SOG, VMG) always in knots
-        const convertWindSpeed = (knots) => {
-          if (window.windSpeedUnit === 1) {
-            return (knots * 0.514444).toFixed(1);  // knots to m/s
-          }
-          return knots.toFixed(1);
-        };
-        
-        // Helper: format boat speed (always knots)
-        const formatBoatSpeed = (knots) => {
-          return knots.toFixed(1);
-        };
-        
-        // Update wind speed unit labels (only for wind speeds, not boat speeds)
-        const windUnitText = window.windSpeedUnit === 1 ? 'm/s' : 'kn';
-        document.querySelectorAll('.wind-unit').forEach(el => {
-          el.textContent = windUnitText;
-        });
-        
         // Update Apparent Wind
         if (data.apparent && data.apparent.hasData) {
-          document.getElementById('aws-speed').textContent = convertWindSpeed(data.apparent.speed || 0);
+          document.getElementById('aws-speed').textContent = (data.apparent.speed || 0).toFixed(1);
           document.getElementById('aws-angle').textContent = (data.apparent.angle || 0).toFixed(0);
           document.getElementById('aws-sentence').textContent = data.apparent.source || 'MWV(R)';
           document.getElementById('aws-connection').textContent = data.apparent.connection || 'TCP';
@@ -928,7 +888,7 @@ String buildSinglePage() {
         
         // Update True Wind
         if (data.true && data.true.hasData) {
-          document.getElementById('tws-speed').textContent = convertWindSpeed(data.true.speed || 0);
+          document.getElementById('tws-speed').textContent = (data.true.speed || 0).toFixed(1);
           document.getElementById('tws-angle').textContent = (data.true.angle || 0).toFixed(0);
           
           if (data.true.source === 'Calculated') {
@@ -943,10 +903,10 @@ String buildSinglePage() {
           document.getElementById('tws-time').textContent = formatTime(data.true.age);
         }
         
-        // Update GPS Data (always knots)
+        // Update GPS Data
         if (data.gps) {
           if (data.gps.hasSOG) {
-            document.getElementById('gps-sog').textContent = formatBoatSpeed(data.gps.sog || 0);
+            document.getElementById('gps-sog').textContent = (data.gps.sog || 0).toFixed(1);
           }
           if (data.gps.hasCOG) {
             document.getElementById('gps-cog').textContent = (data.gps.cog || 0).toFixed(0);
@@ -960,20 +920,15 @@ String buildSinglePage() {
           document.getElementById('gps-time').textContent = formatTime(data.gps.age);
         }
         
-        // Update VMG (always knots)
+        // Update VMG
         if (data.vmg && data.vmg.hasData) {
-          document.getElementById('vmg-value').textContent = formatBoatSpeed(data.vmg.speed || 0);
+          document.getElementById('vmg-value').textContent = (data.vmg.speed || 0).toFixed(1);
           document.getElementById('vmg-time').textContent = formatTime(data.vmg.age);
         }
         
         // Update connection status
         const statusResp = await fetch('/status');
         const statusData = await statusResp.json();
-        
-        // Update unit preference if changed
-        if (statusData.wind_unit !== undefined) {
-          window.windSpeedUnit = statusData.wind_unit;
-        }
         
         if (statusData.tcp_connected) {
           document.getElementById('tcp-status').textContent = 
