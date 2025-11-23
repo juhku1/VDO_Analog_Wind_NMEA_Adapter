@@ -283,6 +283,8 @@ static void handleStatus(){
   j += ",\"has_mwv_t\":"; j += (hasMwvT ? "true" : "false");
   j += ",\"has_vwr\":"; j += (hasVwr ? "true" : "false");
   j += ",\"has_vwt\":"; j += (hasVwt ? "true" : "false");
+  j += ",\"tcp_connected\":"; j += (tcpConnected ? "true" : "false");
+  j += ",\"udp_connected\":"; j += (udpConnected ? "true" : "false");
   j += ",\"port\":";      j += nmeaPort;
   j += ",\"proto\":\"";      
   j += (nmeaProto==PROTO_TCP?"TCP":nmeaProto==PROTO_HTTP?"HTTP":"UDP"); 

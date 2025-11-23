@@ -193,6 +193,14 @@ String buildSinglePage() {
           <div class="status-value" id="vmgValue">--<span class="status-unit">kn</span></div>
           <div class="info-text">Velocity Made Good</div>
         </div>
+        <div class="status-item">
+          <div class="status-label">Connections</div>
+          <div class="status-value" style="font-size: 16px;">
+            <span id="tcpStatus" class="status-error">TCP: ✗</span><br>
+            <span id="udpStatus" class="status-error">UDP: ✗</span>
+          </div>
+          <div class="info-text">Dual Source Active</div>
+        </div>
       </div>
     </div>
 
@@ -421,19 +429,10 @@ String buildSinglePage() {
         </div>
         
         <div class="form-group">
-          <label for="nmeaProto">Protocol</label>
-          <select id="nmeaProto">
-            <option value="1" )rawliteral";
-  
-  if (nmeaProto == PROTO_TCP) html += "selected";
-  
-  html += R"rawliteral(>TCP</option>
-            <option value="0" )rawliteral";
-  
-  if (nmeaProto == PROTO_UDP) html += "selected";
-  
-  html += R"rawliteral(>UDP</option>
-          </select>
+          <p class="info-text">
+            ℹ️ <strong>Dual Source:</strong> Both TCP and UDP connections are active simultaneously.
+            TCP connects to the specified host/port. UDP listens on port 10110 for broadcasts.
+          </p>
         </div>
         
         <div class="button-group">
@@ -604,6 +603,29 @@ String buildSinglePage() {
         if (data.vmg) {
           document.getElementById('vmgValue').innerHTML = 
             (data.vmg.speed || 0).toFixed(1) + '<span class="status-unit">kn</span>';
+        }
+        
+        // Update connection status
+        const statusResp = await fetch('/status');
+        const statusData = await statusResp.json();
+        
+        const tcpEl = document.getElementById('tcpStatus');
+        const udpEl = document.getElementById('udpStatus');
+        
+        if (statusData.tcp_connected) {
+          tcpEl.innerHTML = 'TCP: ✓';
+          tcpEl.className = 'status-ok';
+        } else {
+          tcpEl.innerHTML = 'TCP: ✗';
+          tcpEl.className = 'status-error';
+        }
+        
+        if (statusData.udp_connected) {
+          udpEl.innerHTML = 'UDP: ✓';
+          udpEl.className = 'status-ok';
+        } else {
+          udpEl.innerHTML = 'UDP: ✗';
+          udpEl.className = 'status-error';
         }
       } catch (error) {
         console.error('Status update failed:', error);

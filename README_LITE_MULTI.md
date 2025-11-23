@@ -130,6 +130,58 @@ Single-page interface at `http://[device-ip]/`:
 ### GPS Data
 - **$xxRMC** - Recommended Minimum (SOG, COG)
 - **$xxVTG** - Track Made Good and Ground Speed
+- **$xxHDT** - True Heading
+- **$xxHDM** - Magnetic Heading
+
+## Dual Source Support
+
+**LITE Multi supports simultaneous TCP and UDP connections!**
+
+### How It Works
+```
+TCP Connection:  Connects to specified host:port (e.g., OpenPlotter)
+UDP Connection:  Listens on port 10110 for broadcasts (always active)
+
+Both connections are polled simultaneously in the same loop.
+Data from both sources is merged in real-time.
+```
+
+### Use Cases
+
+**Case 1: Primary + Backup**
+```
+TCP: Primary NMEA source (192.168.1.100:10110)
+UDP: Backup broadcast source
+
+If TCP fails → UDP continues providing data
+```
+
+**Case 2: Multiple Instruments**
+```
+TCP: Wind instrument (Apparent Wind from masthead)
+UDP: OpenPlotter (True Wind, GPS, calculated data)
+
+Both active → Complete dataset
+```
+
+**Case 3: Redundancy**
+```
+TCP: Main chartplotter
+UDP: Backup navigation system
+
+If one fails → Other continues
+```
+
+### Configuration
+
+**Web UI:**
+- Enter TCP host and port for primary source
+- UDP automatically listens on port 10110
+- Status display shows both connection states:
+  - TCP: ✓ (connected) or ✗ (disconnected)
+  - UDP: ✓ (bound) or ✗ (not bound)
+
+**No protocol selection needed** - both are always active!
 
 ## Hardware Setup
 
