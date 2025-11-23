@@ -380,7 +380,7 @@ void ensureTCPConnected(WiFiClient& client){
   
   Serial.printf("TCP connect to %s:%u...\n", nmeaHost, nmeaPort);
   client.stop();
-  client.setTimeout(1000);
+  client.setTimeout(100);  // Reduced from 1000ms to prevent blocking when host is offline
   
   if(client.connect(nmeaHost, nmeaPort)) {
     Serial.println("TCP connected! Setting non-blocking mode...");
