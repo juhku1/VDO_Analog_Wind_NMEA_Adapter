@@ -155,6 +155,38 @@ String buildSinglePage() {
     .pulse-section.disabled {
       opacity: 0.6;
     }
+    .tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: 20px;
+      border-bottom: 2px solid #ddd;
+    }
+    .tab {
+      padding: 12px 24px;
+      background: #ecf0f1;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 500;
+      color: #7f8c8d;
+      border-radius: 8px 8px 0 0;
+      transition: all 0.3s;
+    }
+    .tab:hover {
+      background: #d5dbdb;
+    }
+    .tab.active {
+      background: white;
+      color: #2c3e50;
+      border-bottom: 2px solid white;
+      margin-bottom: -2px;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -163,6 +195,15 @@ String buildSinglePage() {
       <h1>🌬️ VDO Wind Adapter - LITE Multi</h1>
       <p class="info-text">3 speed pulse outputs • Shared direction • Simplified configuration</p>
     </div>
+    
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('data')">📊 Data Config</button>
+      <button class="tab" onclick="switchTab('network')">🌐 Network</button>
+    </div>
+
+    <!-- Data Config Tab -->
+    <div id="dataTab" class="tab-content active">
 
     <!-- Status Section -->
     <div class="card">
@@ -392,6 +433,11 @@ String buildSinglePage() {
       </div>
     </div>
 
+    </div> <!-- End Data Config Tab -->
+
+    <!-- Network Tab -->
+    <div id="networkTab" class="tab-content">
+
     <!-- Network Configuration -->
     <div class="card">
       <h2>🌐 Network Configuration</h2>
@@ -408,6 +454,14 @@ String buildSinglePage() {
         <div class="form-group">
           <label for="password">WiFi Password</label>
           <input type="password" id="password" placeholder="Leave blank to keep current">
+        </div>
+        
+        <h3>Access Point (AP) Settings</h3>
+        
+        <div class="form-group">
+          <label for="apPassword">AP Password</label>
+          <input type="password" id="apPassword" placeholder="Leave blank to keep current (min 8 characters)">
+          <p class="info-text">⚠️ Change the default AP password (wind12345) for security</p>
         </div>
         
         <h3>TCP Connection</h3>
@@ -458,8 +512,32 @@ String buildSinglePage() {
         </div>
       </form>
     </div>
-  </div>
 
+    </div> <!-- End Network Tab -->
+
+  </div> <!-- End container -->
+
+  <script>
+    // Tab switching
+    function switchTab(tabName) {
+      // Hide all tabs
+      document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+      });
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.remove('active');
+      });
+      
+      // Show selected tab
+      if (tabName === 'data') {
+        document.getElementById('dataTab').classList.add('active');
+        document.querySelectorAll('.tab')[0].classList.add('active');
+      } else if (tabName === 'network') {
+        document.getElementById('networkTab').classList.add('active');
+        document.querySelectorAll('.tab')[1].classList.add('active');
+      }
+    }
+    
   <script>
     // Load initial configuration
     async function loadConfig() {
@@ -556,6 +634,7 @@ String buildSinglePage() {
       const formData = new URLSearchParams({
         sta_ssid: document.getElementById('ssid').value,
         sta_pass: document.getElementById('password').value,
+        ap_pass: document.getElementById('apPassword').value,
         p1_host: document.getElementById('nmeaHost').value,
         p1_port: document.getElementById('nmeaPort').value,
         p1_proto: document.getElementById('nmeaProto').value,
