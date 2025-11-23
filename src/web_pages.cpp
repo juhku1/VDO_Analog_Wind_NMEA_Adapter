@@ -225,12 +225,80 @@ String buildSinglePage() {
     .footer a:hover {
       text-decoration: underline;
     }
+    .data-section {
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 15px;
+      background: #f9f9f9;
+    }
+    .data-section h3 {
+      margin: 0 0 12px 0;
+      color: #2c3e50;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .data-row {
+      display: flex;
+      gap: 30px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    .data-row > div {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .data-label {
+      font-size: 13px;
+      color: #7f8c8d;
+      font-weight: 500;
+    }
+    .data-value {
+      font-size: 22px;
+      font-weight: 600;
+      color: #2c3e50;
+    }
+    .data-unit {
+      font-size: 14px;
+      color: #95a5a6;
+    }
+    .data-source {
+      font-size: 12px;
+      color: #7f8c8d;
+      margin-top: 8px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-tcp { background: #3498db; color: white; }
+    .badge-udp { background: #9b59b6; color: white; }
+    .badge-calc { background: #e67e22; color: white; }
+    .badge-nmea { background: #27ae60; color: white; }
+    .badge-warning { background: #f39c12; color: white; }
+    .nmea-raw {
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      background: #ecf0f1;
+      padding: 2px 6px;
+      border-radius: 3px;
+      color: #2c3e50;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header-card">
-      <h1>🌬️ VDO Wind Adapter - LITE Multi</h1>
+      <h1>🌬️ VDO Wind Adapter</h1>
       <p class="tagline">Bring your analog sensor into the digital age</p>
     </div>
     
@@ -246,39 +314,109 @@ String buildSinglePage() {
     <!-- Status Section -->
     <div class="card">
       <h2>📊 Current Status</h2>
-      <div class="status-grid">
-        <div class="status-item">
-          <div class="status-label">Direction</div>
-          <div class="status-value" id="directionValue">--<span class="status-unit">°</span></div>
-          <div class="info-text" id="directionSource">-</div>
-        </div>
-        <div class="status-item">
-          <div class="status-label">Apparent Wind</div>
-          <div class="status-value" id="apparentSpeed">--<span class="status-unit">kn</span></div>
-          <div class="info-text" id="apparentAngle">-- °</div>
-        </div>
-        <div class="status-item">
-          <div class="status-label">True Wind</div>
-          <div class="status-value" id="trueSpeed">--<span class="status-unit">kn</span></div>
-          <div class="info-text" id="trueAngle">-- °</div>
-        </div>
-        <div class="status-item">
-          <div class="status-label">GPS</div>
-          <div class="status-value" id="sogValue">--<span class="status-unit">kn</span></div>
-          <div class="info-text" id="cogValue">COG: -- °</div>
-        </div>
-        <div class="status-item">
-          <div class="status-label">VMG</div>
-          <div class="status-value" id="vmgValue">--<span class="status-unit">kn</span></div>
-          <div class="info-text">Velocity Made Good</div>
-        </div>
-        <div class="status-item">
-          <div class="status-label">Connections</div>
-          <div class="status-value" style="font-size: 16px;">
-            <span id="tcpStatus" class="status-error">TCP: ✗</span><br>
-            <span id="udpStatus" class="status-error">UDP: ✗</span>
+      
+      <!-- Apparent Wind -->
+      <div class="data-section">
+        <h3>🌬️ Apparent Wind</h3>
+        <div class="data-row">
+          <div>
+            <span class="data-label">Speed:</span>
+            <span class="data-value" id="aws-speed">--</span>
+            <span class="data-unit">kn</span>
           </div>
-          <div class="info-text">Dual Source Active</div>
+          <div>
+            <span class="data-label">Angle:</span>
+            <span class="data-value" id="aws-angle">--</span>
+            <span class="data-unit">°</span>
+          </div>
+        </div>
+        <div class="data-source">
+          <span class="badge badge-nmea" id="aws-sentence">--</span>
+          <span class="badge badge-tcp" id="aws-connection">--</span>
+          <span id="aws-time">No data</span>
+        </div>
+      </div>
+      
+      <!-- True Wind -->
+      <div class="data-section">
+        <h3>🧭 True Wind</h3>
+        <div class="data-row">
+          <div>
+            <span class="data-label">Speed:</span>
+            <span class="data-value" id="tws-speed">--</span>
+            <span class="data-unit">kn</span>
+          </div>
+          <div>
+            <span class="data-label">Angle:</span>
+            <span class="data-value" id="tws-angle">--</span>
+            <span class="data-unit">°</span>
+          </div>
+        </div>
+        <div class="data-source">
+          <span class="badge badge-calc" id="tws-source">--</span>
+          <span id="tws-formula"></span>
+          <span id="tws-time">No data</span>
+        </div>
+      </div>
+      
+      <!-- GPS Data -->
+      <div class="data-section">
+        <h3>📍 GPS Data</h3>
+        <div class="data-row">
+          <div>
+            <span class="data-label">SOG:</span>
+            <span class="data-value" id="gps-sog">--</span>
+            <span class="data-unit">kn</span>
+          </div>
+          <div>
+            <span class="data-label">COG:</span>
+            <span class="data-value" id="gps-cog">--</span>
+            <span class="data-unit">°</span>
+          </div>
+          <div>
+            <span class="data-label">HDG:</span>
+            <span class="data-value" id="gps-hdg">--</span>
+            <span class="data-unit">°</span>
+          </div>
+        </div>
+        <div class="data-source">
+          <span class="badge badge-nmea" id="gps-sentence">--</span>
+          <span class="badge badge-udp" id="gps-connection">--</span>
+          <span id="gps-time">No data</span>
+        </div>
+      </div>
+      
+      <!-- VMG -->
+      <div class="data-section">
+        <h3>📈 VMG (Velocity Made Good)</h3>
+        <div class="data-row">
+          <div>
+            <span class="data-value" id="vmg-value">--</span>
+            <span class="data-unit">kn</span>
+          </div>
+        </div>
+        <div class="data-source">
+          <span class="badge badge-calc">Calculated</span>
+          <span>SOG × cos(TWA)</span>
+          <span id="vmg-time">No data</span>
+        </div>
+      </div>
+      
+      <!-- Connections -->
+      <div class="data-section">
+        <h3>🔌 Connections</h3>
+        <div class="data-row">
+          <div>
+            <span id="tcp-status">TCP: ✗</span>
+          </div>
+          <div>
+            <span id="udp-status">UDP: ✗</span>
+          </div>
+        </div>
+        <div class="data-source">
+          <span>Last NMEA:</span>
+          <span class="nmea-raw" id="last-nmea">--</span>
+          <span id="nmea-time"></span>
         </div>
       </div>
     </div>
@@ -707,65 +845,89 @@ String buildSinglePage() {
         const resp = await fetch('/api/dataflow');
         const data = await resp.json();
         
-        // Update direction
-        if (data.apparent && data.apparent.angle >= 0) {
-          document.getElementById('directionValue').innerHTML = 
-            data.apparent.angle + '<span class="status-unit">°</span>';
+        // Helper: format time ago
+        const formatTime = (ms) => {
+          if (!ms) return 'No data';
+          const age = Date.now() - ms;
+          if (age < 1000) return 'Just now';
+          if (age < 60000) return Math.floor(age/1000) + 's ago';
+          if (age < 3600000) return Math.floor(age/60000) + 'm ago';
+          return Math.floor(age/3600000) + 'h ago';
+        };
+        
+        // Update Apparent Wind
+        if (data.apparent && data.apparent.hasData) {
+          document.getElementById('aws-speed').textContent = (data.apparent.speed || 0).toFixed(1);
+          document.getElementById('aws-angle').textContent = (data.apparent.angle || 0).toFixed(0);
+          document.getElementById('aws-sentence').textContent = data.apparent.source || 'MWV(R)';
+          document.getElementById('aws-connection').textContent = data.apparent.connection || 'TCP';
+          document.getElementById('aws-connection').className = 'badge badge-' + (data.apparent.connection || 'tcp').toLowerCase();
+          document.getElementById('aws-time').textContent = formatTime(data.apparent.lastUpdate);
         }
         
-        // Update apparent wind
-        if (data.apparent) {
-          document.getElementById('apparentSpeed').innerHTML = 
-            (data.apparent.speed || 0).toFixed(1) + '<span class="status-unit">kn</span>';
-          document.getElementById('apparentAngle').textContent = 
-            (data.apparent.angle || 0) + '°';
+        // Update True Wind
+        if (data.true && data.true.hasData) {
+          document.getElementById('tws-speed').textContent = (data.true.speed || 0).toFixed(1);
+          document.getElementById('tws-angle').textContent = (data.true.angle || 0).toFixed(0);
+          
+          if (data.true.source === 'Calculated') {
+            document.getElementById('tws-source').textContent = 'Calculated';
+            document.getElementById('tws-source').className = 'badge badge-calc';
+            document.getElementById('tws-formula').textContent = 'AWS + SOG + COG';
+          } else {
+            document.getElementById('tws-source').textContent = data.true.source || 'MWV(T)';
+            document.getElementById('tws-source').className = 'badge badge-nmea';
+            document.getElementById('tws-formula').textContent = '';
+          }
+          document.getElementById('tws-time').textContent = formatTime(data.true.lastUpdate);
         }
         
-        // Update true wind
-        if (data.true) {
-          document.getElementById('trueSpeed').innerHTML = 
-            (data.true.speed || 0).toFixed(1) + '<span class="status-unit">kn</span>';
-          document.getElementById('trueAngle').textContent = 
-            (data.true.angle || 0) + '°';
-        }
-        
-        // Update GPS
-        if (data.sog) {
-          document.getElementById('sogValue').innerHTML = 
-            (data.sog.speed || 0).toFixed(1) + '<span class="status-unit">kn</span>';
-        }
-        if (data.cog) {
-          document.getElementById('cogValue').textContent = 
-            'COG: ' + (data.cog.angle || 0) + '°';
+        // Update GPS Data
+        if (data.gps) {
+          if (data.gps.hasSOG) {
+            document.getElementById('gps-sog').textContent = (data.gps.sog || 0).toFixed(1);
+          }
+          if (data.gps.hasCOG) {
+            document.getElementById('gps-cog').textContent = (data.gps.cog || 0).toFixed(0);
+          }
+          if (data.gps.hasHeading) {
+            document.getElementById('gps-hdg').textContent = (data.gps.heading || 0).toFixed(0);
+          }
+          document.getElementById('gps-sentence').textContent = 'RMC, HDT';
+          document.getElementById('gps-connection').textContent = data.gps.connection || 'UDP';
+          document.getElementById('gps-connection').className = 'badge badge-' + (data.gps.connection || 'udp').toLowerCase();
+          document.getElementById('gps-time').textContent = formatTime(data.gps.lastUpdate);
         }
         
         // Update VMG
-        if (data.vmg) {
-          document.getElementById('vmgValue').innerHTML = 
-            (data.vmg.speed || 0).toFixed(1) + '<span class="status-unit">kn</span>';
+        if (data.vmg && data.vmg.hasData) {
+          document.getElementById('vmg-value').textContent = (data.vmg.speed || 0).toFixed(1);
+          document.getElementById('vmg-time').textContent = formatTime(data.vmg.lastUpdate);
         }
         
         // Update connection status
         const statusResp = await fetch('/status');
         const statusData = await statusResp.json();
         
-        const tcpEl = document.getElementById('tcpStatus');
-        const udpEl = document.getElementById('udpStatus');
-        
         if (statusData.tcp_connected) {
-          tcpEl.innerHTML = 'TCP: ✓';
-          tcpEl.className = 'status-ok';
+          document.getElementById('tcp-status').textContent = 
+            'TCP: ✓ ' + (statusData.tcp_host || '') + ':' + (statusData.tcp_port || '');
         } else {
-          tcpEl.innerHTML = 'TCP: ✗';
-          tcpEl.className = 'status-error';
+          document.getElementById('tcp-status').textContent = 'TCP: ✗ Not connected';
         }
         
         if (statusData.udp_connected) {
-          udpEl.innerHTML = 'UDP: ✓';
-          udpEl.className = 'status-ok';
+          document.getElementById('udp-status').textContent = 
+            'UDP: ✓ Port ' + (statusData.udp_port || '10110');
         } else {
-          udpEl.innerHTML = 'UDP: ✗';
-          udpEl.className = 'status-error';
+          document.getElementById('udp-status').textContent = 'UDP: ✗ Not listening';
+        }
+        
+        // Update last NMEA sentence
+        if (statusData.last_nmea) {
+          document.getElementById('last-nmea').textContent = statusData.last_nmea;
+          document.getElementById('nmea-time').textContent = 
+            '(' + formatTime(statusData.last_nmea_time) + ')';
         }
       } catch (error) {
         console.error('Status update failed:', error);
