@@ -322,7 +322,7 @@ String buildSinglePage() {
           <div>
             <span class="data-label">Speed:</span>
             <span class="data-value" id="aws-speed">--</span>
-            <span class="data-unit">kn</span>
+            <span class="data-unit" id="speed-unit">kn</span>
           </div>
           <div>
             <span class="data-label">Angle:</span>
@@ -637,6 +637,17 @@ String buildSinglePage() {
           <input type="password" id="password" placeholder="Leave blank to keep current">
         </div>
         
+        <h3>Display Preferences</h3>
+        
+        <div class="form-group">
+          <label for="windUnit">Wind Speed Unit</label>
+          <select id="windUnit">
+            <option value="0">Knots (kn)</option>
+            <option value="1">Meters per second (m/s)</option>
+          </select>
+          <p class="info-text">ℹ️ Choose how wind speeds are displayed in the UI</p>
+        </div>
+        
         <h3>Access Point (AP) Settings</h3>
         
         <div class="form-group">
@@ -728,6 +739,14 @@ String buildSinglePage() {
     // Load initial configuration
     async function loadConfig() {
       try {
+        // Load status to get wind unit preference
+        const statusResp = await fetch('/status');
+        const statusData = await statusResp.json();
+        if (statusData.wind_unit !== undefined) {
+          document.getElementById('windUnit').value = statusData.wind_unit;
+          window.windSpeedUnit = statusData.wind_unit;  // Store globally for display
+        }
+        
         // Load direction source and offset
         const dirResp = await fetch('/api/direction');
         const dirData = await dirResp.json();
@@ -821,6 +840,7 @@ String buildSinglePage() {
         sta_ssid: document.getElementById('ssid').value,
         sta_pass: document.getElementById('password').value,
         ap_pass: document.getElementById('apPassword').value,
+        wind_unit: document.getElementById('windUnit').value,
         p1_host: document.getElementById('nmeaHost').value,
         p1_port: document.getElementById('nmeaPort').value,
         p1_proto: document.getElementById('nmeaProto').value,
@@ -859,9 +879,25 @@ String buildSinglePage() {
           return Math.floor(age/3600000) + 'h ago';
         };
         
+        // Helper: convert speed based on unit preference (0=knots, 1=m/s)
+        const convertSpeed = (knots) => {
+          if (window.windSpeedUnit === 1) {
+            return (knots * 0.514444).toFixed(1);  // knots to m/s
+          }
+          return knots.toFixed(1);
+        };
+        
+        // Update unit labels
+        const unitText = window.windSpeedUnit === 1 ? 'm/s' : 'kn';
+        document.querySelectorAll('.data-unit').forEach(el => {
+          if (el.textContent === 'kn' || el.textContent === 'm/s') {
+            el.textContent = unitText;
+          }
+        });
+        
         // Update Apparent Wind
         if (data.apparent && data.apparent.hasData) {
-          document.getElementById('aws-speed').textContent = (data.apparent.speed || 0).toFixed(1);
+          document.getElementById('aws-speed').textContent = convertSpeed(data.apparent.speed || 0);
           document.getElementById('aws-angle').textContent = (data.apparent.angle || 0).toFixed(0);
           document.getElementById('aws-sentence').textContent = data.apparent.source || 'MWV(R)';
           document.getElementById('aws-connection').textContent = data.apparent.connection || 'TCP';
@@ -871,7 +907,7 @@ String buildSinglePage() {
         
         // Update True Wind
         if (data.true && data.true.hasData) {
-          document.getElementById('tws-speed').textContent = (data.true.speed || 0).toFixed(1);
+          document.getElementById('tws-speed').textContent = convertSpeed(data.true.speed || 0);
           document.getElementById('tws-angle').textContent = (data.true.angle || 0).toFixed(0);
           
           if (data.true.source === 'Calculated') {
@@ -889,7 +925,7 @@ String buildSinglePage() {
         // Update GPS Data
         if (data.gps) {
           if (data.gps.hasSOG) {
-            document.getElementById('gps-sog').textContent = (data.gps.sog || 0).toFixed(1);
+            document.getElementById('gps-sog').textContent = convertSpeed(data.gps.sog || 0);
           }
           if (data.gps.hasCOG) {
             document.getElementById('gps-cog').textContent = (data.gps.cog || 0).toFixed(0);
@@ -905,7 +941,7 @@ String buildSinglePage() {
         
         // Update VMG
         if (data.vmg && data.vmg.hasData) {
-          document.getElementById('vmg-value').textContent = (data.vmg.speed || 0).toFixed(1);
+          document.getElementById('vmg-value').textContent = convertSpeed(data.vmg.speed || 0);
           document.getElementById('vmg-time').textContent = formatTime(data.vmg.age);
         }
         

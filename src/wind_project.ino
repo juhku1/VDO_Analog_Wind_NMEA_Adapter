@@ -103,6 +103,9 @@ uint8_t  nmeaProto = PROTO_HTTP;
 uint16_t nmeaPort  = 80;
 char nmeaHost[64] = "192.168.4.1";
 
+// Wind speed unit preference (0=knots, 1=m/s)
+uint8_t windSpeedUnit = 0;  // Default: knots
+
 // Persistent TCP client for real-time wind data
 WiFiClient tcpClient;
 uint32_t lastTcpAttempt = 0;
@@ -283,6 +286,9 @@ void loadConfig(){
   }
   
   offsetDeg = prefs.getInt("offset", 0);
+  
+  // Load wind speed unit preference (0=knots, 1=m/s)
+  windSpeedUnit = prefs.getUChar("wind_unit", 0);
   
   // Load connection profile selection - DEPRECATED
   // Both profiles are now always active simultaneously (TCP + UDP)
