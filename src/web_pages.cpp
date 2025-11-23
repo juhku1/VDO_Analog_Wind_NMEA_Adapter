@@ -29,22 +29,37 @@ String buildSinglePage() {
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { 
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #f5f5f5;
+      background: #eaf6fb;
       padding: 20px;
       line-height: 1.6;
     }
     .container { max-width: 1000px; margin: 0 auto; }
+    .header-card {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      text-align: center;
+    }
     .card {
       background: white;
       border-radius: 8px;
       padding: 20px;
       margin-bottom: 20px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     }
     h1 { 
       color: #2c3e50;
+      margin-bottom: 5px;
+      font-size: 28px;
+      font-weight: 600;
+    }
+    .tagline {
+      color: #7f8c8d;
+      font-size: 14px;
+      margin-top: -5px;
       margin-bottom: 10px;
-      font-size: 24px;
     }
     h2 {
       color: #34495e;
@@ -115,13 +130,18 @@ String buildSinglePage() {
       color: white;
       border: none;
       padding: 12px 24px;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
       font-size: 14px;
       font-weight: 500;
-      transition: background 0.3s;
+      transition: all 0.3s;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
-    button:hover { background: #2980b9; }
+    button:hover { 
+      background: #2980b9;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+      transform: translateY(-1px);
+    }
     button:disabled {
       background: #95a5a6;
       cursor: not-allowed;
@@ -187,13 +207,31 @@ String buildSinglePage() {
     .tab-content.active {
       display: block;
     }
+    .footer {
+      text-align: center;
+      padding: 20px;
+      margin-top: 30px;
+      color: #7f8c8d;
+      font-size: 13px;
+      border-top: 1px solid #ddd;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .footer a {
+      color: #3498db;
+      text-decoration: none;
+    }
+    .footer a:hover {
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="card">
+    <div class="header-card">
       <h1>🌬️ VDO Wind Adapter - LITE Multi</h1>
-      <p class="info-text">3 speed pulse outputs • Shared direction • Simplified configuration</p>
+      <p class="tagline">Bring your analog sensor into the digital age</p>
     </div>
     
     <!-- Tabs -->
@@ -515,6 +553,12 @@ String buildSinglePage() {
 
     </div> <!-- End Network Tab -->
 
+    <!-- Footer -->
+    <div class="footer">
+      <p>Created by Juha-Matti Mäntylä • MIT Licensed</p>
+      <p><a href="https://github.com/juhku1/VDO_Analog_Wind_NMEA_Adapter" target="_blank">View on GitHub</a></p>
+    </div>
+
   </div> <!-- End container -->
 
   <script>
@@ -538,7 +582,6 @@ String buildSinglePage() {
       }
     }
     
-  <script>
     // Load initial configuration
     async function loadConfig() {
       try {
