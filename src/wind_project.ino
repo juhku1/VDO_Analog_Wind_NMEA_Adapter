@@ -41,14 +41,18 @@ SemaphoreHandle_t pauseAckSemaphore = NULL;  // For Core 1 pause acknowledgment
 
 Preferences prefs;
 
-// LITE: Single display only
-DisplayConfig display;
+// LITE Multi: 3 displays
+DisplayConfig displays[3];
 
-// LEDC channel for single display
-const uint8_t LEDC_CHANNEL = 0;
-const uint8_t LEDC_TIMER = 0;
-bool ledcActive = false;
-uint32_t lastFreq = 0;
+// LITE Multi: Global direction (shared by all Logic Wind displays)
+uint8_t global_direction_source = DATA_APPARENT_WIND;  // Default: Apparent Wind angle
+int global_wind_angle = 0;
+
+// LEDC channels for 3 displays
+const uint8_t LEDC_CHANNELS[3] = {0, 1, 2};
+const uint8_t LEDC_TIMERS[3] = {0, 1, 2};
+bool ledcActive[3] = {false, false, false};
+uint32_t lastFreq[3] = {0, 0, 0};
 
 // Wind data - protected by dataMutex
 float sumlog_speed_kn = 0.0;
@@ -176,20 +180,49 @@ void nmeaPollTaskFunc(void *pvParameters) {
 }
 
 /* ========= Asetusten tallennus ========= */
-void saveDisplayConfig() {
+void saveDisplayConfig(int displayNum) {
   xSemaphoreTake(nvsMutex, portMAX_DELAY);
   prefs.begin(NVS_NAMESPACE, false);
   
-  // LITE: Save single display (always d0_)
-  prefs.putBool("d0_enabled", display.enabled);
-  prefs.putString("d0_type", display.type);
-  prefs.putUChar("d0_dataType", display.dataType);
-  prefs.putInt("d0_offset", display.offsetDeg);
-  prefs.putFloat("d0_sumlogK", display.sumlogK);
-  prefs.putInt("d0_sumlogFmax", display.sumlogFmax);
-  prefs.putInt("d0_pulseDuty", display.pulseDuty);
-  prefs.putInt("d0_pulsePin", display.pulsePin);
-  prefs.putInt("d0_gotoAngle", display.gotoAngle);
+  if (displayNum == -1) {
+    // Save all displays + global direction
+    prefs.putUChar("global_dir", global_direction_source);
+    
+    for (int i = 0; i < 3; i++) {
+      char key[16];
+      snprintf(key, sizeof(key), "d%d_enabled", i);
+      prefs.putBool(key, displays[i].enabled);
+      snprintf(key, sizeof(key), "d%d_type", i);
+      prefs.putString(key, displays[i].type);
+      snprintf(key, sizeof(key), "d%d_speedSrc", i);
+      prefs.putUChar(key, displays[i].speedSource);
+      snprintf(key, sizeof(key), "d%d_sumlogK", i);
+      prefs.putFloat(key, displays[i].sumlogK);
+      snprintf(key, sizeof(key), "d%d_fmax", i);
+      prefs.putInt(key, displays[i].sumlogFmax);
+      snprintf(key, sizeof(key), "d%d_duty", i);
+      prefs.putInt(key, displays[i].pulseDuty);
+      snprintf(key, sizeof(key), "d%d_pin", i);
+      prefs.putInt(key, displays[i].pulsePin);
+    }
+  } else if (displayNum >= 0 && displayNum < 3) {
+    // Save single display
+    char key[16];
+    snprintf(key, sizeof(key), "d%d_enabled", displayNum);
+    prefs.putBool(key, displays[displayNum].enabled);
+    snprintf(key, sizeof(key), "d%d_type", displayNum);
+    prefs.putString(key, displays[displayNum].type);
+    snprintf(key, sizeof(key), "d%d_speedSrc", displayNum);
+    prefs.putUChar(key, displays[displayNum].speedSource);
+    snprintf(key, sizeof(key), "d%d_sumlogK", displayNum);
+    prefs.putFloat(key, displays[displayNum].sumlogK);
+    snprintf(key, sizeof(key), "d%d_fmax", displayNum);
+    prefs.putInt(key, displays[displayNum].sumlogFmax);
+    snprintf(key, sizeof(key), "d%d_duty", displayNum);
+    prefs.putInt(key, displays[displayNum].pulseDuty);
+    snprintf(key, sizeof(key), "d%d_pin", displayNum);
+    prefs.putInt(key, displays[displayNum].pulsePin);
+  }
   
   prefs.end();
   xSemaphoreGive(nvsMutex);
@@ -198,35 +231,42 @@ void saveDisplayConfig() {
 void loadConfig(){
   prefs.begin(NVS_NAMESPACE, false);
   
-  // LITE: Initialize single display (always d0_)
-  display.enabled = prefs.getBool("d0_enabled", true);
+  // LITE Multi: Load global direction source
+  global_direction_source = prefs.getUChar("global_dir", DATA_APPARENT_WIND);
   
-  String typeStr = prefs.getString("d0_type", "sumlog");
-  strncpy(display.type, typeStr.c_str(), sizeof(display.type) - 1);
-  display.type[sizeof(display.type) - 1] = '\0';
-  
-  // Load dataType (new) or migrate from sentence (old)
-  if (prefs.isKey("d0_dataType")) {
-    display.dataType = prefs.getUChar("d0_dataType", DATA_APPARENT_WIND);
-  } else {
-    // Old format: migrate from sentence
-    String sentStr = prefs.getString("d0_sentence", "MWV");
-    display.dataType = DATA_APPARENT_WIND;
-    strncpy(display.sentence, sentStr.c_str(), sizeof(display.sentence) - 1);
-    display.sentence[sizeof(display.sentence) - 1] = '\0';
+  // LITE Multi: Load 3 displays
+  for (int i = 0; i < 3; i++) {
+    char key[16];
+    
+    snprintf(key, sizeof(key), "d%d_enabled", i);
+    displays[i].enabled = prefs.getBool(key, i == 0);  // Only display 0 enabled by default
+    
+    snprintf(key, sizeof(key), "d%d_type", i);
+    String typeStr = prefs.getString(key, "sumlog");
+    strncpy(displays[i].type, typeStr.c_str(), sizeof(displays[i].type) - 1);
+    displays[i].type[sizeof(displays[i].type) - 1] = '\0';
+    
+    snprintf(key, sizeof(key), "d%d_speedSrc", i);
+    displays[i].speedSource = prefs.getUChar(key, DATA_APPARENT_WIND);
+    
+    snprintf(key, sizeof(key), "d%d_sumlogK", i);
+    displays[i].sumlogK = prefs.getFloat(key, 1.0f);
+    
+    snprintf(key, sizeof(key), "d%d_fmax", i);
+    displays[i].sumlogFmax = prefs.getInt(key, 150);
+    
+    snprintf(key, sizeof(key), "d%d_duty", i);
+    displays[i].pulseDuty = prefs.getInt(key, 10);
+    
+    snprintf(key, sizeof(key), "d%d_pin", i);
+    displays[i].pulsePin = prefs.getInt(key, 12 + i * 2);  // Default: 12, 14, 16
+    
+    displays[i].offsetDeg = 0;  // DEPRECATED
+    
+    // Initialize runtime data
+    displays[i].currentSpeed_kn = 0.0f;
+    displays[i].lastUpdate_ms = 0;
   }
-  
-  display.offsetDeg = prefs.getInt("d0_offset", 0);
-  display.sumlogK = prefs.getFloat("d0_sumlogK", 1.0f);
-  display.sumlogFmax = prefs.getInt("d0_sumlogFmax", 150);
-  display.pulseDuty = prefs.getInt("d0_pulseDuty", 10);
-  display.pulsePin = prefs.getInt("d0_pulsePin", 12);
-  display.gotoAngle = prefs.getInt("d0_gotoAngle", 0);
-  
-  // Initialize display wind data
-  display.windSpeed_kn = 0.0f;
-  display.windAngle_deg = 0;
-  display.lastUpdate_ms = 0;
   
   offsetDeg = prefs.getInt("offset", 0);
   
@@ -553,13 +593,15 @@ void setup() {
   }
   
   if (dacReady) {
-    // LITE: Initialize DAC to 0 degrees
+    // LITE Multi: Initialize DAC to 0 degrees
     setOutputsDeg(0);
   }
 
-  // LITE: Initialize single display
-  if (display.enabled) {
-    startDisplay();
+  // LITE Multi: Initialize enabled displays
+  for (int i = 0; i < 3; i++) {
+    if (displays[i].enabled) {
+      startDisplay(i);
+    }
   }
 
   // Käynnistä STA after AP and DAC
@@ -608,8 +650,13 @@ void loop() {
   // Check for data timeout every 100ms (ensures speed/direction zero when connection is lost)
   if (now - lastTimeoutCheck > 100) {
     lastTimeoutCheck = now;
-    updateDisplayData();   // LITE Plus: update from selected source
-    updateDisplayPulse();  // Update pulse output
+    updateGlobalDirection();  // LITE Multi: update global direction
+    for (int i = 0; i < 3; i++) {
+      if (displays[i].enabled) {
+        updateDisplaySpeed(i);   // Update speed from selected source
+        updateDisplayPulse(i);   // Update pulse output
+      }
+    }
   }
   
   // Heartbeat every 10 seconds

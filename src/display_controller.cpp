@@ -12,14 +12,17 @@ inline int wrap360(int deg) {
 }
 // DEG_TO_RAD is already defined in Arduino.h
 
-// External references (LITE: single display)
+// External references (LITE Multi: 3 displays + global direction)
 extern SemaphoreHandle_t dataMutex;
-extern DisplayConfig display;
+extern DisplayConfig displays[3];
 extern DFRobot_GP8403 dac;
-extern const uint8_t LEDC_CHANNEL;
-extern bool ledcActive;
-extern uint32_t lastFreq;
+extern const uint8_t LEDC_CHANNELS[3];
+extern bool ledcActive[3];
+extern uint32_t lastFreq[3];
 extern int lastAngleSent;
+
+extern uint8_t global_direction_source;
+extern int global_wind_angle;
 
 // LITE Plus: Multiple data sources
 extern float apparent_speed_kn;
@@ -49,13 +52,8 @@ int mvClamp(int mv){
 /* ========= DAC Output ========= */
 
 void setOutputsDeg(int deg){
-  // Read display angle with mutex protection
-  int displayAngle;
-  xSemaphoreTake(dataMutex, portMAX_DELAY);
-  displayAngle = display.windAngle_deg;
-  xSemaphoreGive(dataMutex);
-  
-  int adj = wrap360(displayAngle + display.offsetDeg);
+  // LITE Multi: Use global direction (no per-display offset)
+  int adj = wrap360(deg);
   float r = adj * DEG_TO_RAD;
   float s = sinf(r), c = cosf(r);
   float amp = DAC_VAMP_BASE;
@@ -67,166 +65,185 @@ void setOutputsDeg(int deg){
   
   // Track direction changes
   if (adj != lastAngleSent) {
-    Serial.printf("Direction: %d° (sin:%dmV cos:%dmV)\n", adj, sin_mV, cos_mV);
+    Serial.printf("Global Direction: %d° (sin:%dmV cos:%dmV)\n", adj, sin_mV, cos_mV);
   }
   lastAngleSent = adj;
 }
 
 /* ========= LEDC Pulse Generation ========= */
 
-void startDisplay() {
-  if (!ledcActive && display.enabled) {
-    // Setup LEDC channel
-    ledcSetup(LEDC_CHANNEL, LEDC_BASE_FREQ, LEDC_TIMER_RESOLUTION);
-    ledcAttachPin(display.pulsePin, LEDC_CHANNEL);
-    ledcActive = true;
-    lastFreq = 0; // Reset frequency tracking
+void startDisplay(int displayNum) {
+  if (displayNum < 0 || displayNum >= 3) return;
+  
+  if (!ledcActive[displayNum] && displays[displayNum].enabled) {
+    // Setup LEDC channel with separate timer
+    ledcSetup(LEDC_CHANNELS[displayNum], LEDC_BASE_FREQ, LEDC_TIMER_RESOLUTION);
+    ledcAttachPin(displays[displayNum].pulsePin, LEDC_CHANNELS[displayNum]);
+    ledcActive[displayNum] = true;
+    lastFreq[displayNum] = 0;
     
-    Serial.println("Display LEDC started");
-    updateDisplayPulse();
+    Serial.printf("Display %d LEDC started\n", displayNum);
+    updateDisplayPulse(displayNum);
   }
 }
 
-void stopDisplay() {
-  if (ledcActive) {
-    ledcWrite(LEDC_CHANNEL, 0); // Stop PWM
-    ledcDetachPin(display.pulsePin);
-    ledcActive = false;
-    lastFreq = 0; // Reset frequency tracking
-    pinMode(display.pulsePin, INPUT);
-    Serial.println("Display LEDC stopped");
+void stopDisplay(int displayNum) {
+  if (displayNum < 0 || displayNum >= 3) return;
+  
+  if (ledcActive[displayNum]) {
+    ledcWrite(LEDC_CHANNELS[displayNum], 0);
+    ledcDetachPin(displays[displayNum].pulsePin);
+    ledcActive[displayNum] = false;
+    lastFreq[displayNum] = 0;
+    pinMode(displays[displayNum].pulsePin, INPUT);
+    Serial.printf("Display %d LEDC stopped\n", displayNum);
   }
 }
 
-// LITE Plus: Update display data from selected source
-void updateDisplayData() {
+// LITE Multi: Update global direction from selected source
+void updateGlobalDirection() {
   xSemaphoreTake(dataMutex, portMAX_DELAY);
-  uint8_t dataType = display.dataType;
   uint32_t now = millis();
   
-  // Update display based on selected data type
-  switch(dataType) {
+  // Update global direction based on selected source
+  switch(global_direction_source) {
     case DATA_APPARENT_WIND:
       if (apparent_hasData && (now - apparent_lastUpdate_ms) < DATA_TIMEOUT_MS) {
-        display.windSpeed_kn = apparent_speed_kn;
-        display.windAngle_deg = (int)apparent_angle_deg;
-        display.lastUpdate_ms = apparent_lastUpdate_ms;
+        global_wind_angle = (int)apparent_angle_deg;
       }
       break;
       
     case DATA_TRUE_WIND:
       if (true_hasData && (now - true_lastUpdate_ms) < DATA_TIMEOUT_MS) {
-        display.windSpeed_kn = true_speed_kn;
-        display.windAngle_deg = (int)true_angle_deg;
-        display.lastUpdate_ms = true_lastUpdate_ms;
-      }
-      break;
-      
-    case DATA_SOG:
-      if (gps_hasSOG && (now - gps_lastUpdate_ms) < DATA_TIMEOUT_MS) {
-        display.windSpeed_kn = gps_sog_kn;
-        display.windAngle_deg = 0;  // SOG has no angle
-        display.lastUpdate_ms = gps_lastUpdate_ms;
+        global_wind_angle = (int)true_angle_deg;
       }
       break;
       
     case DATA_COG:
       if (gps_hasCOG && (now - gps_lastUpdate_ms) < DATA_TIMEOUT_MS) {
-        display.windSpeed_kn = 0;  // COG has no speed
-        display.windAngle_deg = (int)gps_cog_deg;
-        display.lastUpdate_ms = gps_lastUpdate_ms;
+        global_wind_angle = (int)gps_cog_deg;
+      }
+      break;
+  }
+  xSemaphoreGive(dataMutex);
+  
+  // Update DAC with global direction
+  setOutputsDeg(global_wind_angle);
+}
+
+// LITE Multi: Update display speed from selected source
+void updateDisplaySpeed(int displayNum) {
+  if (displayNum < 0 || displayNum >= 3) return;
+  
+  xSemaphoreTake(dataMutex, portMAX_DELAY);
+  uint8_t speedSource = displays[displayNum].speedSource;
+  uint32_t now = millis();
+  
+  // Update display speed based on selected source
+  switch(speedSource) {
+    case DATA_APPARENT_WIND:
+      if (apparent_hasData && (now - apparent_lastUpdate_ms) < DATA_TIMEOUT_MS) {
+        displays[displayNum].currentSpeed_kn = apparent_speed_kn;
+        displays[displayNum].lastUpdate_ms = apparent_lastUpdate_ms;
+      }
+      break;
+      
+    case DATA_TRUE_WIND:
+      if (true_hasData && (now - true_lastUpdate_ms) < DATA_TIMEOUT_MS) {
+        displays[displayNum].currentSpeed_kn = true_speed_kn;
+        displays[displayNum].lastUpdate_ms = true_lastUpdate_ms;
+      }
+      break;
+      
+    case DATA_SOG:
+      if (gps_hasSOG && (now - gps_lastUpdate_ms) < DATA_TIMEOUT_MS) {
+        displays[displayNum].currentSpeed_kn = gps_sog_kn;
+        displays[displayNum].lastUpdate_ms = gps_lastUpdate_ms;
+      }
+      break;
+      
+    case DATA_COG:
+      // COG has no speed, set to 0
+      displays[displayNum].currentSpeed_kn = 0;
+      if (gps_hasCOG && (now - gps_lastUpdate_ms) < DATA_TIMEOUT_MS) {
+        displays[displayNum].lastUpdate_ms = gps_lastUpdate_ms;
       }
       break;
   }
   xSemaphoreGive(dataMutex);
 }
 
-void updateDisplayPulse() {
-  if (!ledcActive) return;
+void updateDisplayPulse(int displayNum) {
+  if (displayNum < 0 || displayNum >= 3 || !ledcActive[displayNum]) return;
   
-  // Read display speed with mutex protection
+  // LITE Multi: Read display speed with mutex protection
   float currentSpeed;
   uint32_t lastUpdate;
-  uint8_t dataType;
   xSemaphoreTake(dataMutex, portMAX_DELAY);
-  currentSpeed = display.windSpeed_kn;
-  lastUpdate = display.lastUpdate_ms;
-  dataType = display.dataType;
+  currentSpeed = displays[displayNum].currentSpeed_kn;
+  lastUpdate = displays[displayNum].lastUpdate_ms;
   xSemaphoreGive(dataMutex);
   
   // Check for data timeout
   uint32_t now = millis();
   uint32_t dataAge = now - lastUpdate;
-  bool sourceDataStale = false;
   
-  // LITE Plus: Check selected data source
-  xSemaphoreTake(dataMutex, portMAX_DELAY);
-  if (dataType == DATA_APPARENT_WIND && apparent_hasData) {
-    sourceDataStale = (now - apparent_lastUpdate_ms) > DATA_TIMEOUT_MS;
-  } else if (dataType == DATA_TRUE_WIND && true_hasData) {
-    sourceDataStale = (now - true_lastUpdate_ms) > DATA_TIMEOUT_MS;
-  } else if ((dataType == DATA_SOG || dataType == DATA_COG) && (gps_hasSOG || gps_hasCOG)) {
-    sourceDataStale = (now - gps_lastUpdate_ms) > DATA_TIMEOUT_MS;
-  }
-  xSemaphoreGive(dataMutex);
-  
-  // Zero speed if either display data or source data is stale
-  if (dataAge > DATA_TIMEOUT_MS || sourceDataStale) {
+  // Zero speed if data is stale
+  if (dataAge > DATA_TIMEOUT_MS) {
     currentSpeed = 0.0f;
-    if (lastFreq != 0) {
-      Serial.printf("Display timeout! Display age=%u ms, source stale=%d - zeroing speed\n", 
-                    dataAge, sourceDataStale);
+    if (lastFreq[displayNum] != 0) {
+      Serial.printf("Display %d timeout! age=%u ms - zeroing speed\n", displayNum, dataAge);
     }
   }
   
-  if (strcmp(display.type, "sumlog") == 0 || strcmp(display.type, "logicwind") == 0) {
+  if (strcmp(displays[displayNum].type, "sumlog") == 0 || strcmp(displays[displayNum].type, "logicwind") == 0) {
     // Stop immediately if raw speed is 0
-    if (currentSpeed < 0.01f && lastFreq != 0) {
-      ledcWrite(LEDC_CHANNEL, 0);
-      lastFreq = 0;
-      Serial.println("Display stopped (speed=0)");
+    if (currentSpeed < 0.01f && lastFreq[displayNum] != 0) {
+      ledcWrite(LEDC_CHANNELS[displayNum], 0);
+      lastFreq[displayNum] = 0;
+      Serial.printf("Display %d stopped (speed=0)\n", displayNum);
       return;
     }
     
     // Pulse calculation (same for both types)
-    float freq = currentSpeed * display.sumlogK;
-    if (freq > (float)display.sumlogFmax) freq = (float)display.sumlogFmax;
+    float freq = currentSpeed * displays[displayNum].sumlogK;
+    if (freq > (float)displays[displayNum].sumlogFmax) freq = (float)displays[displayNum].sumlogFmax;
     
     if (freq < 0.01f) {
       // Stop PWM when frequency too low
-      if (lastFreq != 0) {
-        ledcWrite(LEDC_CHANNEL, 0);
-        lastFreq = 0;
-        Serial.println("Display stopped (freq too low)");
+      if (lastFreq[displayNum] != 0) {
+        ledcWrite(LEDC_CHANNELS[displayNum], 0);
+        lastFreq[displayNum] = 0;
+        Serial.printf("Display %d stopped (freq too low)\n", displayNum);
       }
     } else {
       // Round frequency to reduce jitter
       uint32_t freqInt = (uint32_t)(freq + 0.5f);
       
       // Only update if frequency actually changed
-      if (freqInt != lastFreq) {
+      if (freqInt != lastFreq[displayNum]) {
         if (freqInt == 0) {
-          ledcWrite(LEDC_CHANNEL, 0);
-          lastFreq = 0;
-          Serial.println("Display stopped (0Hz avoided)");
+          ledcWrite(LEDC_CHANNELS[displayNum], 0);
+          lastFreq[displayNum] = 0;
+          Serial.printf("Display %d stopped (0Hz avoided)\n", displayNum);
         } else {
           // Calculate duty cycle (0-1023 for 10-bit resolution)
-          uint32_t duty = (uint32_t)((1023 * display.pulseDuty) / 100);
+          uint32_t duty = (uint32_t)((1023 * displays[displayNum].pulseDuty) / 100);
           
           // Set frequency and duty cycle
-          ledcChangeFrequency(LEDC_CHANNEL, freqInt, LEDC_TIMER_RESOLUTION);
-          ledcWrite(LEDC_CHANNEL, duty);
+          ledcChangeFrequency(LEDC_CHANNELS[displayNum], freqInt, LEDC_TIMER_RESOLUTION);
+          ledcWrite(LEDC_CHANNELS[displayNum], duty);
           
-          lastFreq = freqInt;
-          Serial.printf("Display freq=%uHz (speed=%.1f kn)\n", freqInt, currentSpeed);
+          lastFreq[displayNum] = freqInt;
+          Serial.printf("Display %d freq=%uHz (speed=%.1f kn)\n", displayNum, freqInt, currentSpeed);
         }
       }
     }
   } else {
     // Unknown type - no pulse, stop PWM
-    if (lastFreq != 0) {
-      ledcWrite(LEDC_CHANNEL, 0);
-      lastFreq = 0;
+    if (lastFreq[displayNum] != 0) {
+      ledcWrite(LEDC_CHANNELS[displayNum], 0);
+      lastFreq[displayNum] = 0;
     }
   }
 }

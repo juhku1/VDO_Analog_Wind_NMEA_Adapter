@@ -34,28 +34,29 @@ enum WindDataType {
   DATA_COG = 3             // Course Over Ground - from GPS (RMC/VTG)
 };
 
-// Display configuration structure
+// LITE Multi: Simplified display configuration
 struct DisplayConfig {
   bool enabled;
   char type[16];         // "logicwind" | "sumlog"
-  uint8_t dataType;      // WindDataType: what kind of wind data to show
-  char sentence[8];      // DEPRECATED: kept for backward compatibility
-  int offsetDeg;         // Logic Wind adjustment
+  uint8_t speedSource;   // Which data source for SPEED (WindDataType)
+  int offsetDeg;         // Logic Wind adjustment (DEPRECATED - use global)
   float sumlogK;         // Pulse per knot
   int sumlogFmax;        // Max frequency
   int pulseDuty;         // Pulse duty %
   int pulsePin;          // GPIO pin
-  int gotoAngle;         // Manual angle
   
-  // Per-display wind data (protected by dataMutex)
-  float windSpeed_kn;    // Wind speed in knots for this display
-  int windAngle_deg;     // Wind angle in degrees for this display
-  uint32_t lastUpdate_ms; // Timestamp of last data update
+  // Runtime data (updated automatically from speedSource)
+  float currentSpeed_kn;  // Current speed for this display
+  uint32_t lastUpdate_ms; // Timestamp of last update
 };
 
 // Global variables from wind_project.ino
 extern Preferences prefs;
-extern DisplayConfig display;  // LITE: single display only
+extern DisplayConfig displays[3];  // LITE Multi: 3 displays
+
+// LITE Multi: Global direction (shared by all Logic Wind displays)
+extern uint8_t global_direction_source;  // Which data source for DIRECTION
+extern int global_wind_angle;            // Current global direction
 
 // FreeRTOS synchronization
 extern SemaphoreHandle_t dataMutex;
@@ -63,9 +64,9 @@ extern SemaphoreHandle_t wifiMutex;
 extern SemaphoreHandle_t nvsMutex;
 extern SemaphoreHandle_t pauseAckSemaphore;
 
-// LEDC variables (LITE: single channel)
-extern const uint8_t LEDC_CHANNEL;
-extern bool ledcActive;
+// LEDC variables (LITE Multi: 3 channels)
+extern const uint8_t LEDC_CHANNELS[3];
+extern bool ledcActive[3];
 
 extern float sumlog_speed_kn;
 extern int offsetDeg;
@@ -114,18 +115,18 @@ extern uint32_t lastNmeaDataMs;
 #define AP_SSID "VDO-Cal"
 #define AP_PASS "wind12345"
 
-// Core funktiot (LITE: removed displayNum parameters)
+// Core funktiot (LITE Multi: displayNum parameters restored)
 extern void loadConfig();
 void nmeaPollTaskFunc(void *pvParameters);
-void saveDisplayConfig();
+void saveDisplayConfig(int displayNum = -1);
 void saveNetworkConfig(const char* ssid, const char* pass);
-void startDisplay();
-void stopDisplay();
-void updateDisplayPulse();
+void startDisplay(int displayNum);
+void stopDisplay(int displayNum);
+void updateDisplayPulse(int displayNum);
 void setupWebUI(WebServer& server);
 void bindTransport();
 void connectSTA();
-void setOutputsDeg(int deg);
+void setOutputsDeg(int deg);  // Global direction
 
 // Page builders (web_pages.cpp) - LITE: single page
 String buildSinglePage();

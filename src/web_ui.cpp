@@ -17,70 +17,62 @@ static void handleHome() {
 
 // ---------- HTTP-käsittelijät ----------
 
-// LITE: Simplified display API for single display
+// LITE Multi: Display API for 3 displays
 static void handleDisplayAPI() {
+  if (!g_srv->hasArg("num")) {
+    g_srv->send(400, "text/plain", "Missing num parameter");
+    return;
+  }
+  
+  int displayNum = g_srv->arg("num").toInt();
+  if (displayNum < 1 || displayNum > 3) {
+    g_srv->send(400, "text/plain", "Invalid display number (1-3)");
+    return;
+  }
+  
+  int idx = displayNum - 1;  // Convert to 0-based index
   String action = g_srv->arg("action");
   
   if (g_srv->method() == HTTP_GET) {
-    if (action == "enabled") {
-      // Set enabled state
-      if (g_srv->hasArg("val")) {
-        bool newEnabled = g_srv->arg("val").toInt() != 0;
-        display.enabled = newEnabled;
-        saveDisplayConfig();
-        
-        if (newEnabled) {
-          startDisplay();
-        } else {
-          stopDisplay();
-        }
-      }
-      g_srv->send(200, "text/plain", String("enabled=") + (display.enabled ? "1" : "0"));
-    } else {
-      // Return display configuration as JSON
-      String json = "{";
-      json += "\"enabled\":" + String(display.enabled ? "true" : "false");
-      json += ",\"type\":\"" + String(display.type) + "\"";
-      json += ",\"dataType\":" + String(display.dataType);
-      json += ",\"offsetDeg\":" + String(display.offsetDeg);
-      json += ",\"sumlogK\":" + String(display.sumlogK);
-      json += ",\"sumlogFmax\":" + String(display.sumlogFmax);
-      json += ",\"pulseDuty\":" + String(display.pulseDuty);
-      json += ",\"pulsePin\":" + String(display.pulsePin);
-      json += ",\"gotoAngle\":" + String(display.gotoAngle);
-      json += "}";
-      g_srv->send(200, "application/json", json);
-    }
+    // Return display configuration as JSON
+    String json = "{";
+    json += "\"enabled\":" + String(displays[idx].enabled ? "true" : "false");
+    json += ",\"type\":\"" + String(displays[idx].type) + "\"";
+    json += ",\"speedSource\":" + String(displays[idx].speedSource);
+    json += ",\"sumlogK\":" + String(displays[idx].sumlogK);
+    json += ",\"sumlogFmax\":" + String(displays[idx].sumlogFmax);
+    json += ",\"pulseDuty\":" + String(displays[idx].pulseDuty);
+    json += ",\"pulsePin\":" + String(displays[idx].pulsePin);
+    json += "}";
+    g_srv->send(200, "application/json", json);
   } else if (g_srv->method() == HTTP_POST && action == "save") {
-    // Save all display settings
-    if (g_srv->hasArg("enabled")) display.enabled = g_srv->arg("enabled").toInt() != 0;
+    // Save display settings
+    if (g_srv->hasArg("enabled")) displays[idx].enabled = g_srv->arg("enabled").toInt() != 0;
     if (g_srv->hasArg("type")) {
       String typeStr = g_srv->arg("type");
-      strncpy(display.type, typeStr.c_str(), sizeof(display.type) - 1);
-      display.type[sizeof(display.type) - 1] = '\0';
+      strncpy(displays[idx].type, typeStr.c_str(), sizeof(displays[idx].type) - 1);
+      displays[idx].type[sizeof(displays[idx].type) - 1] = '\0';
     }
-    if (g_srv->hasArg("dataType")) {
-      int dt = g_srv->arg("dataType").toInt();
-      if (dt >= 0 && dt <= 3) {  // LITE Plus: 0-3 valid
-        display.dataType = (uint8_t)dt;
+    if (g_srv->hasArg("speedSource")) {
+      int src = g_srv->arg("speedSource").toInt();
+      if (src >= 0 && src <= 3) {
+        displays[idx].speedSource = (uint8_t)src;
       }
     }
-    if (g_srv->hasArg("offsetDeg")) display.offsetDeg = g_srv->arg("offsetDeg").toInt();
-    if (g_srv->hasArg("sumlogK")) display.sumlogK = g_srv->arg("sumlogK").toFloat();
-    if (g_srv->hasArg("sumlogFmax")) display.sumlogFmax = g_srv->arg("sumlogFmax").toInt();
-    if (g_srv->hasArg("pulseDuty")) display.pulseDuty = g_srv->arg("pulseDuty").toInt();
-    if (g_srv->hasArg("pulsePin")) display.pulsePin = g_srv->arg("pulsePin").toInt();
-    if (g_srv->hasArg("gotoAngle")) display.gotoAngle = g_srv->arg("gotoAngle").toInt();
+    if (g_srv->hasArg("sumlogK")) displays[idx].sumlogK = g_srv->arg("sumlogK").toFloat();
+    if (g_srv->hasArg("sumlogFmax")) displays[idx].sumlogFmax = g_srv->arg("sumlogFmax").toInt();
+    if (g_srv->hasArg("pulseDuty")) displays[idx].pulseDuty = g_srv->arg("pulseDuty").toInt();
+    if (g_srv->hasArg("pulsePin")) displays[idx].pulsePin = g_srv->arg("pulsePin").toInt();
     
-    saveDisplayConfig();
+    saveDisplayConfig(idx);
     
     // Restart display with new settings
-    if (display.enabled) {
-      stopDisplay();
-      startDisplay();
-      updateDisplayPulse();
+    if (displays[idx].enabled) {
+      stopDisplay(idx);
+      startDisplay(idx);
+      updateDisplayPulse(idx);
     } else {
-      stopDisplay();
+      stopDisplay(idx);
     }
     
     g_srv->send(200, "text/plain", "OK");
@@ -112,33 +104,27 @@ static void handlePulseDuty(){
 static void handlePulseDuty2(){
   g_srv->send(200, "text/plain", "Legacy handler - use /api/display?display=1&pulseDuty=X");
 }
-// LITE: Simplified trim and goto handlers
+// LITE Multi: Simplified handlers
 static void handleTrim(){
-  if (g_srv->hasArg("offset")){
-    int v = g_srv->arg("offset").toInt();
-    if (v<-180) v=-180; if (v>180) v=180;
-    offsetDeg = v;
-    prefs.putInt("offset", offsetDeg);
-    setOutputsDeg(0);
-  }
-  g_srv->send(200, "text/plain", String("offset=")+offsetDeg);
+  // DEPRECATED in LITE Multi (no per-display offset)
+  g_srv->send(200, "text/plain", "offset=0 (deprecated in LITE Multi)");
 }
 static void handleGoto(){
   if (g_srv->hasArg("deg")){
     int v = g_srv->arg("deg").toInt();
     if (v<0) v=0; if (v>359) v=359;
     
-    // Set display angle manually for testing
+    // Set global angle manually for testing
     xSemaphoreTake(dataMutex, portMAX_DELAY);
-    display.windAngle_deg = v;
+    global_wind_angle = v;
     xSemaphoreGive(dataMutex);
     
-    setOutputsDeg(0);
+    setOutputsDeg(v);
   }
   
   int currentAngle;
   xSemaphoreTake(dataMutex, portMAX_DELAY);
-  currentAngle = display.windAngle_deg;
+  currentAngle = global_wind_angle;
   xSemaphoreGive(dataMutex);
   
   g_srv->send(200,"text/plain",String("angle=")+currentAngle);
@@ -268,31 +254,35 @@ static void handleStatus(){
   // Get AP client count
   uint8_t apClientCount = WiFi.softAPgetStationNum();
   
-  // LITE: Read single display data for status
-  float display_speed;
-  int display_angle;
+  // LITE Multi: Read global angle and display data
+  int globalAngle;
   xSemaphoreTake(dataMutex, portMAX_DELAY);
-  display_speed = display.windSpeed_kn;
-  display_angle = display.windAngle_deg;
+  globalAngle = global_wind_angle;
   xSemaphoreGive(dataMutex);
   
-  String j; j.reserve(400);
+  String j; j.reserve(600);
   j += "{";
-  j += "\"angle\":";      j += display_angle;
-  j += ",\"offset\":";      j += offsetDeg;
-  j += ",\"speed_kn\":";    j += display_speed;
-  j += ",\"display\":{";
-  j += "\"enabled\":"; j += (display.enabled ? "true" : "false");
-  j += ",\"type\":\""; j += display.type; j += "\"";
-  j += ",\"sumlogK\":"; j += display.sumlogK;
-  j += ",\"sumlogFmax\":"; j += display.sumlogFmax;
-  j += ",\"pulseDuty\":"; j += display.pulseDuty;
-  j += ",\"pulsePin\":"; j += display.pulsePin;
-  j += "}";
+  j += "\"globalAngle\":";  j += globalAngle;
+  j += ",\"globalDirSource\":"; j += global_direction_source;
+  j += ",\"displays\":[";
+  for (int i = 0; i < 3; i++) {
+    if (i > 0) j += ",";
+    j += "{\"enabled\":"; j += (displays[i].enabled ? "true" : "false");
+    j += ",\"type\":\""; j += displays[i].type; j += "\"";
+    j += ",\"speedSource\":"; j += displays[i].speedSource;
+    j += ",\"sumlogK\":"; j += displays[i].sumlogK;
+    j += ",\"sumlogFmax\":"; j += displays[i].sumlogFmax;
+    j += ",\"pulseDuty\":"; j += displays[i].pulseDuty;
+    j += ",\"pulsePin\":"; j += displays[i].pulsePin;
+    j += "}";
+  }
+  j += "]";
   j += ",\"src\":\"";      j += lastSentenceType; j += "\"";
   j += ",\"raw\":\"";      j += rawEsc;  j += "\"";
   j += ",\"has_mwv_r\":"; j += (hasMwvR ? "true" : "false");
+  j += ",\"has_mwv_t\":"; j += (hasMwvT ? "true" : "false");
   j += ",\"has_vwr\":"; j += (hasVwr ? "true" : "false");
+  j += ",\"has_vwt\":"; j += (hasVwt ? "true" : "false");
   j += ",\"port\":";      j += nmeaPort;
   j += ",\"proto\":\"";      
   j += (nmeaProto==PROTO_TCP?"TCP":nmeaProto==PROTO_HTTP?"HTTP":"UDP"); 
@@ -413,11 +403,16 @@ static void handleDataFlow() {
     j += ",\"age\":"; j += gps_hasCOG ? String(now - gps_lastUpdate_ms) : "999999";
     j += "}";
     
-    // Display info
-    j += ",\"display\":{";
-    j += "\"enabled\":"; j += display.enabled ? "true" : "false";
-    j += ",\"dataType\":"; j += display.dataType;
-    j += "}";
+    // Display info (LITE Multi)
+    j += ",\"globalDirSource\":"; j += global_direction_source;
+    j += ",\"displays\":[";
+    for (int i = 0; i < 3; i++) {
+      if (i > 0) j += ",";
+      j += "{\"enabled\":"; j += displays[i].enabled ? "true" : "false";
+      j += ",\"speedSource\":"; j += displays[i].speedSource;
+      j += "}";
+    }
+    j += "]";
     
     j += "}";
     
