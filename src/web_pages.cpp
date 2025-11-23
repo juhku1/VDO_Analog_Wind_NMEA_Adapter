@@ -304,14 +304,15 @@ String buildSinglePage() {
     
     <!-- Tabs -->
     <div class="tabs">
-      <button class="tab active" onclick="switchTab('data')">📊 Data Config</button>
+      <button class="tab active" onclick="switchTab('data')">📊 Status</button>
+      <button class="tab" onclick="switchTab('config')">⚙️ Configuration</button>
       <button class="tab" onclick="switchTab('network')">🌐 Network</button>
     </div>
 
-    <!-- Data Config Tab -->
+    <!-- Status Tab (Read-only data display) -->
     <div id="dataTab" class="tab-content active">
 
-    <!-- Status Section -->
+    <!-- Current Status -->
     <div class="card">
       <h2>📊 Current Status</h2>
       
@@ -322,7 +323,7 @@ String buildSinglePage() {
           <div>
             <span class="data-label">Speed:</span>
             <span class="data-value" id="aws-speed">--</span>
-            <span class="data-unit" id="speed-unit">kn</span>
+            <span class="data-unit wind-unit">kn</span>
           </div>
           <div>
             <span class="data-label">Angle:</span>
@@ -344,7 +345,7 @@ String buildSinglePage() {
           <div>
             <span class="data-label">Speed:</span>
             <span class="data-value" id="tws-speed">--</span>
-            <span class="data-unit">kn</span>
+            <span class="data-unit wind-unit">kn</span>
           </div>
           <div>
             <span class="data-label">Angle:</span>
@@ -614,7 +615,39 @@ String buildSinglePage() {
       </div>
     </div>
 
-    </div> <!-- End Data Config Tab -->
+    </div> <!-- End Status Tab -->
+
+    <!-- Configuration Tab -->
+    <div id="configTab" class="tab-content">
+    <div class="card">
+      <h2>🧭 Direction Output (shared by all Logic Wind instruments)</h2>
+      <form id="directionForm">
+        <div class="form-group">
+          <label for="directionSource">Direction Source</label>
+          <select id="directionSource">
+            <option value="0">Apparent Wind Angle</option>
+            <option value="1">True Wind Angle</option>
+          </select>
+          <p class="info-text">All Logic Wind instruments will show this direction via DAC output.</p>
+        </div>
+        
+        <div class="form-group">
+          <label for="directionOffset">Direction Offset (degrees)</label>
+          <input type="number" id="directionOffset" min="-180" max="180" value="0">
+          <p class="info-text">Calibration offset for direction output (-180 to +180)</p>
+        </div>
+        
+        <button type="submit">💾 Save Direction Settings</button>
+      </form>
+    </div>
+
+    <!-- Speed Pulse Outputs -->
+    <div class="card">
+      <h2>⚡ Speed Pulse Outputs</h2>
+      <p class="info-text">Configure up to 3 independent speed pulse outputs for different instruments.</p>
+    </div>
+
+    </div> <!-- End Configuration Tab -->
 
     <!-- Network Tab -->
     <div id="networkTab" class="tab-content">
@@ -736,9 +769,12 @@ String buildSinglePage() {
       if (tabName === 'data') {
         document.getElementById('dataTab').classList.add('active');
         document.querySelectorAll('.tab')[0].classList.add('active');
+      } else if (tabName === 'config') {
+        document.getElementById('configTab').classList.add('active');
+        document.querySelectorAll('.tab')[1].classList.add('active');
       } else if (tabName === 'network') {
         document.getElementById('networkTab').classList.add('active');
-        document.querySelectorAll('.tab')[1].classList.add('active');
+        document.querySelectorAll('.tab')[2].classList.add('active');
       }
     }
     
@@ -890,25 +926,29 @@ String buildSinglePage() {
           return Math.floor(age/3600000) + 'h ago';
         };
         
-        // Helper: convert speed based on unit preference (0=knots, 1=m/s)
-        const convertSpeed = (knots) => {
+        // Helper: convert wind speed based on unit preference (0=knots, 1=m/s)
+        // Only for wind speeds (AWS, TWS) - boat speeds (SOG, VMG) always in knots
+        const convertWindSpeed = (knots) => {
           if (window.windSpeedUnit === 1) {
             return (knots * 0.514444).toFixed(1);  // knots to m/s
           }
           return knots.toFixed(1);
         };
         
-        // Update unit labels
-        const unitText = window.windSpeedUnit === 1 ? 'm/s' : 'kn';
-        document.querySelectorAll('.data-unit').forEach(el => {
-          if (el.textContent === 'kn' || el.textContent === 'm/s') {
-            el.textContent = unitText;
-          }
+        // Helper: format boat speed (always knots)
+        const formatBoatSpeed = (knots) => {
+          return knots.toFixed(1);
+        };
+        
+        // Update wind speed unit labels (only for wind speeds, not boat speeds)
+        const windUnitText = window.windSpeedUnit === 1 ? 'm/s' : 'kn';
+        document.querySelectorAll('.wind-unit').forEach(el => {
+          el.textContent = windUnitText;
         });
         
         // Update Apparent Wind
         if (data.apparent && data.apparent.hasData) {
-          document.getElementById('aws-speed').textContent = convertSpeed(data.apparent.speed || 0);
+          document.getElementById('aws-speed').textContent = convertWindSpeed(data.apparent.speed || 0);
           document.getElementById('aws-angle').textContent = (data.apparent.angle || 0).toFixed(0);
           document.getElementById('aws-sentence').textContent = data.apparent.source || 'MWV(R)';
           document.getElementById('aws-connection').textContent = data.apparent.connection || 'TCP';
@@ -918,7 +958,7 @@ String buildSinglePage() {
         
         // Update True Wind
         if (data.true && data.true.hasData) {
-          document.getElementById('tws-speed').textContent = convertSpeed(data.true.speed || 0);
+          document.getElementById('tws-speed').textContent = convertWindSpeed(data.true.speed || 0);
           document.getElementById('tws-angle').textContent = (data.true.angle || 0).toFixed(0);
           
           if (data.true.source === 'Calculated') {
@@ -933,10 +973,10 @@ String buildSinglePage() {
           document.getElementById('tws-time').textContent = formatTime(data.true.age);
         }
         
-        // Update GPS Data
+        // Update GPS Data (always knots)
         if (data.gps) {
           if (data.gps.hasSOG) {
-            document.getElementById('gps-sog').textContent = convertSpeed(data.gps.sog || 0);
+            document.getElementById('gps-sog').textContent = formatBoatSpeed(data.gps.sog || 0);
           }
           if (data.gps.hasCOG) {
             document.getElementById('gps-cog').textContent = (data.gps.cog || 0).toFixed(0);
@@ -950,9 +990,9 @@ String buildSinglePage() {
           document.getElementById('gps-time').textContent = formatTime(data.gps.age);
         }
         
-        // Update VMG
+        // Update VMG (always knots)
         if (data.vmg && data.vmg.hasData) {
-          document.getElementById('vmg-value').textContent = convertSpeed(data.vmg.speed || 0);
+          document.getElementById('vmg-value').textContent = formatBoatSpeed(data.vmg.speed || 0);
           document.getElementById('vmg-time').textContent = formatTime(data.vmg.age);
         }
         
