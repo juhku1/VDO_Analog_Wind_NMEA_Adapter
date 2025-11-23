@@ -466,17 +466,9 @@ void pollTCP(WiFiClient& client){
             lastNmeaDataMs = millis();
             lastTcpDataMs = millis();
             if(parseNMEALine(nmeaLineBuf)) {
-              // LITE Multi: Update DAC if any Logic Wind instrument is enabled
-              bool hasLogicWind = false;
-              for (int i = 0; i < 3; i++) {
-                if (speedPulses[i].enabled && strcmp(speedPulses[i].instrumentType, "logicwind") == 0) {
-                  hasLogicWind = true;
-                  break;
-                }
-              }
-              if (hasLogicWind) {
-                setDirectionOutput(directionAngle);
-              }
+              // LITE Multi: Update direction immediately when new NMEA data arrives
+              // This provides faster response than waiting for 50ms loop update
+              updateDirectionOutput();
             }
             nmeaLineBufLen = 0;
           }
@@ -556,17 +548,9 @@ void pollUDP() {
             lastNmeaDataMs = millis();
             lastUdpDataMs = millis();
             if (parseNMEALine(nmeaLineBuf)) {
-              // LITE Multi: Update DAC if any Logic Wind instrument is enabled
-              bool hasLogicWind = false;
-              for (int i = 0; i < 3; i++) {
-                if (speedPulses[i].enabled && strcmp(speedPulses[i].instrumentType, "logicwind") == 0) {
-                  hasLogicWind = true;
-                  break;
-                }
-              }
-              if (hasLogicWind) {
-                setDirectionOutput(directionAngle);
-              }
+              // LITE Multi: Update direction immediately when new NMEA data arrives
+              // This provides faster response than waiting for 50ms loop update
+              updateDirectionOutput();
             }
             nmeaLineBufLen = 0;
           }
@@ -742,8 +726,9 @@ void loop() {
   uint32_t now = millis();
   loopCount++;
   
-  // Check for data timeout every 100ms (ensures speed/direction zero when connection is lost)
-  if (now - lastTimeoutCheck > 100) {
+  // Check for data timeout every 50ms (ensures speed/direction zero when connection is lost)
+  // Faster update rate (20 Hz) for more responsive wind direction display
+  if (now - lastTimeoutCheck > 50) {
     lastTimeoutCheck = now;
     updateCalculations();         // LITE Multi: calculate True Wind and VMG
     updateDirectionOutput();      // LITE Multi: update global direction
