@@ -3,6 +3,9 @@
 #include "nmea_parser.h"
 #include "web_ui.h"
 
+// Debug level: 0=off, 1=errors only, 2=all NMEA sentences
+#define NMEA_DEBUG_LEVEL 0
+
 // LITE: Helper functions (from wind_calculations.h)
 inline int wrap360(int deg) {
   while (deg < 0) deg += 360;
@@ -105,7 +108,9 @@ bool parseMWV(char* line){
     strncpy(apparent_source, "MWV(R)", sizeof(apparent_source) - 1);
     xSemaphoreGive(dataMutex);
     
+    #if NMEA_DEBUG_LEVEL >= 2
     Serial.printf("MWV(R): angle=%d°, speed=%.1f kn, hasSpeed=%d\n", newAngle, newSpeed, hasSpeed);
+    #endif
     
     hasMwvR = true;
     return true;
@@ -120,7 +125,9 @@ bool parseMWV(char* line){
     strncpy(true_source, "MWV(T)", sizeof(true_source) - 1);
     xSemaphoreGive(dataMutex);
     
+    #if NMEA_DEBUG_LEVEL >= 2
     Serial.printf("MWV(T): angle=%d°, speed=%.1f kn, hasSpeed=%d\n", newAngle, newSpeed, hasSpeed);
+    #endif
     
     hasMwvT = true;
     return true;
@@ -178,7 +185,9 @@ bool parseVWR(char* line){
   strncpy(apparent_source, "VWR", sizeof(apparent_source) - 1);
   xSemaphoreGive(dataMutex);
   
+  #if NMEA_DEBUG_LEVEL >= 2
   Serial.printf("VWR: angle=%d°, speed=%.1f kn, hasSpeed=%d\n", newAngle, newSpeed, hasSpeed);
+  #endif
   
   hasVwr = true;
   return true;
@@ -208,6 +217,8 @@ bool parseRMC(char* line){
     gps_lastUpdate_ms = millis();
     xSemaphoreGive(dataMutex);
     
+    #if NMEA_DEBUG_LEVEL >= 2
+    #endif
     Serial.printf("GPS RMC: SOG=%.1f kn, COG=%.1f°\n", sog, cog);
     return true;
   }
@@ -235,6 +246,8 @@ bool parseVTG(char* line){
     gps_lastUpdate_ms = millis();
     xSemaphoreGive(dataMutex);
     
+    #if NMEA_DEBUG_LEVEL >= 2
+    #endif
     Serial.printf("GPS VTG: SOG=%.1f kn, COG=%.1f°\n", sog, cog);
     return true;
   }
@@ -273,6 +286,8 @@ bool parseVWT(char* line){
   strncpy(true_source, "VWT", sizeof(true_source) - 1);
   xSemaphoreGive(dataMutex);
   
+  #if NMEA_DEBUG_LEVEL >= 2
+  #endif
   Serial.printf("VWT: angle=%d°, speed=%.1f kn, hasSpeed=%d\n", newAngle, newSpeed, hasSpeed);
   
   hasVwt = true;
@@ -297,6 +312,8 @@ bool parseHDT(char* line){
     gps_lastUpdate_ms = millis();
     xSemaphoreGive(dataMutex);
     
+    #if NMEA_DEBUG_LEVEL >= 2
+    #endif
     Serial.printf("HDT: Heading=%.1f° (true)\n", heading);
     return true;
   }
@@ -319,6 +336,8 @@ bool parseHDM(char* line){
     gps_lastUpdate_ms = millis();
     xSemaphoreGive(dataMutex);
     
+    #if NMEA_DEBUG_LEVEL >= 2
+    #endif
     Serial.printf("HDM: Heading=%.1f° (magnetic)\n", heading);
     return true;
   }

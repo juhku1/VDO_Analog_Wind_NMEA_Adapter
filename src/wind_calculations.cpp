@@ -91,11 +91,6 @@ bool calculateTrueWind(float& trueSpeed, float& trueAngle) {
   // Convert to 0-360 range
   trueAngle = wrap360((int)twa);
   
-  // Log if using COG fallback
-  if (!hasHeading) {
-    Serial.printf("True Wind calc: Using COG (%.1f°) as heading fallback\n", heading);
-  }
-  
   return true;
 }
 
@@ -135,10 +130,6 @@ bool calculateVMG(float& vmg) {
   vmg = sog * cos(twa * DEG_TO_RAD);
   
   // Log if using COG fallback
-  if (!hasHeading) {
-    Serial.printf("VMG calc: Using COG (%.1f°) as heading fallback\n", heading);
-  }
-  
   return true;
 }
 
@@ -161,8 +152,6 @@ void updateCalculations() {
       true_hasData = true;
       true_lastUpdate_ms = now;
       strncpy(true_source, "Calculated", sizeof(true_source) - 1);
-      
-      Serial.printf("True Wind calculated: %.1f kn @ %d°\n", calcTrueSpeed, (int)calcTrueAngle);
     }
     
     xSemaphoreGive(dataMutex);
@@ -176,7 +165,5 @@ void updateCalculations() {
     vmg_hasData = true;
     vmg_lastUpdate_ms = now;
     xSemaphoreGive(dataMutex);
-    
-    Serial.printf("VMG calculated: %.1f kn\n", calcVMG);
   }
 }
