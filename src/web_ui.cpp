@@ -59,9 +59,9 @@ static void handleDisplayAPI() {
         speedPulses[idx].speedSource = (uint8_t)src;
       }
     }
-    if (g_srv->hasArg("sumlogK")) speedPulses[idx].pulsesPerKnot = g_srv->arg("sumlogK").toFloat();
-    if (g_srv->hasArg("sumlogFmax")) speedPulses[idx].maxFrequency = g_srv->arg("sumlogFmax").toInt();
-    if (g_srv->hasArg("pulseDuty")) speedPulses[idx].dutyCycle = g_srv->arg("pulseDuty").toInt();
+    if (g_srv->hasArg("pulsesPerKnot")) speedPulses[idx].pulsesPerKnot = g_srv->arg("pulsesPerKnot").toFloat();
+    if (g_srv->hasArg("maxFrequency")) speedPulses[idx].maxFrequency = g_srv->arg("maxFrequency").toInt();
+    if (g_srv->hasArg("dutyCycle")) speedPulses[idx].dutyCycle = g_srv->arg("dutyCycle").toInt();
     if (g_srv->hasArg("pulsePin")) speedPulses[idx].pulsePin = g_srv->arg("pulsePin").toInt();
     
     saveSpeedPulseConfig(idx);
@@ -424,15 +424,49 @@ static void handleDataFlow() {
   g_srv->send(200, "application/json", j);
 }
 
+// LITE Multi: Direction source API
+static void handleDirectionAPI() {
+  if (g_srv->method() == HTTP_POST) {
+    if (g_srv->hasArg("source")) {
+      int src = g_srv->arg("source").toInt();
+      if (src >= 0 && src <= 3) {
+        directionSource = (uint8_t)src;
+        
+        // Save to NVS
+        xSemaphoreTake(nvsMutex, portMAX_DELAY);
+        prefs.begin(NVS_NAMESPACE, false);
+        prefs.putUChar("global_dir", directionSource);
+        prefs.end();
+        xSemaphoreGive(nvsMutex);
+        
+        g_srv->send(200, "text/plain", "OK");
+        return;
+      }
+    }
+    g_srv->send(400, "text/plain", "Invalid source");
+  } else {
+    // GET: return current direction source
+    String json = "{";
+    json += "\"source\":" + String(directionSource);
+    json += ",\"angle\":" + String(directionAngle);
+    json += "}";
+    g_srv->send(200, "application/json", json);
+  }
+}
+
 void setupWebUI(WebServer& server){
   g_srv = &server;
   
-  // LITE: Single-page handler
+  // LITE Multi: Single-page handler
   server.on("/",            HTTP_GET,  handleHome);
   
-  // Display API
+  // Speed Pulse API
   server.on("/api/display", HTTP_GET,  handleDisplayAPI);
   server.on("/api/display", HTTP_POST, handleDisplayAPI);
+  
+  // Direction API
+  server.on("/api/direction", HTTP_GET,  handleDirectionAPI);
+  server.on("/api/direction", HTTP_POST, handleDirectionAPI);
   
   // Configuration endpoints
   server.on("/trim",        HTTP_GET,  handleTrim);

@@ -1,4 +1,4 @@
-// web_pages_lite.cpp - LITE: Single-page HTML UI
+// web_pages_multi.cpp - LITE Multi: 3 speed pulses + global direction
 
 #include "web_ui.h"
 #include <Arduino.h>
@@ -16,7 +16,7 @@ String formatTimeAgo(uint32_t lastUpdate_ms) {
   return String(age_ms / 3600000) + "h ago";
 }
 
-// LITE: Single-page UI combining status, network, and display config
+// LITE Multi: Single-page UI with 3 speed pulses + global direction
 String buildSinglePage() {
   String html = R"rawliteral(
 <!DOCTYPE html>
@@ -24,7 +24,7 @@ String buildSinglePage() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VDO Wind Adapter LITE</title>
+  <title>VDO Wind Adapter - LITE Multi</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { 
@@ -33,7 +33,7 @@ String buildSinglePage() {
       padding: 20px;
       line-height: 1.6;
     }
-    .container { max-width: 800px; margin: 0 auto; }
+    .container { max-width: 1000px; margin: 0 auto; }
     .card {
       background: white;
       border-radius: 8px;
@@ -52,6 +52,11 @@ String buildSinglePage() {
       font-size: 18px;
       border-bottom: 2px solid #3498db;
       padding-bottom: 5px;
+    }
+    h3 {
+      color: #34495e;
+      margin: 20px 0 10px 0;
+      font-size: 16px;
     }
     .status-grid {
       display: grid;
@@ -140,13 +145,23 @@ String buildSinglePage() {
       gap: 10px;
       margin-top: 20px;
     }
+    .pulse-section {
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 15px;
+      margin-bottom: 15px;
+      background: #f9f9f9;
+    }
+    .pulse-section.disabled {
+      opacity: 0.6;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="card">
-      <h1>🌬️ VDO Wind Adapter LITE</h1>
-      <p class="info-text">Single display • Apparent Wind only • Simplified configuration</p>
+      <h1>🌬️ VDO Wind Adapter - LITE Multi</h1>
+      <p class="info-text">3 speed pulse outputs • Shared direction • Simplified configuration</p>
     </div>
 
     <!-- Status Section -->
@@ -154,179 +169,204 @@ String buildSinglePage() {
       <h2>📊 Current Status</h2>
       <div class="status-grid">
         <div class="status-item">
-          <div class="status-label">Wind Speed</div>
-          <div class="status-value">)rawliteral";
-  
-  // Wind speed
-  xSemaphoreTake(dataMutex, portMAX_DELAY);
-  float speed = apparent_speed_kn;
-  int angle = (int)apparent_angle_deg;
-  bool hasData = apparent_hasData;
-  uint32_t lastUpdate = apparent_lastUpdate_ms;
-  String source = String(apparent_source);
-  xSemaphoreGive(dataMutex);
-  
-  // Debug logging
-  Serial.printf("Web UI: speed=%.1f, angle=%d, hasData=%d, age=%u ms, source=%s\n", 
-                speed, angle, hasData, millis() - lastUpdate, source.c_str());
-  
-  if (hasData && (millis() - lastUpdate) < DATA_TIMEOUT_MS) {
-    html += String(speed, 1);
-    html += "<span class=\"status-unit\">kn</span>";
-  } else {
-    html += "<span class=\"status-error\">--</span>";
-  }
-  
-  html += R"rawliteral(
-          </div>
+          <div class="status-label">Direction</div>
+          <div class="status-value" id="directionValue">--<span class="status-unit">°</span></div>
+          <div class="info-text" id="directionSource">-</div>
         </div>
         <div class="status-item">
-          <div class="status-label">Wind Angle</div>
-          <div class="status-value">)rawliteral";
-  
-  if (hasData && (millis() - lastUpdate) < DATA_TIMEOUT_MS) {
-    html += String(angle);
-    html += "<span class=\"status-unit\">°</span>";
-  } else {
-    html += "<span class=\"status-error\">--</span>";
-  }
-  
-  html += R"rawliteral(
-          </div>
+          <div class="status-label">Apparent Wind</div>
+          <div class="status-value" id="apparentSpeed">--<span class="status-unit">kn</span></div>
+          <div class="info-text" id="apparentAngle">-- °</div>
         </div>
         <div class="status-item">
-          <div class="status-label">Data Source</div>
-          <div class="status-value" style="font-size: 16px;">)rawliteral";
-  
-  html += source;
-  
-  html += R"rawliteral(
-          </div>
-          <div class="info-text">)rawliteral";
-  
-  html += formatTimeAgo(lastUpdate);
-  
-  html += R"rawliteral(</div>
+          <div class="status-label">True Wind</div>
+          <div class="status-value" id="trueSpeed">--<span class="status-unit">kn</span></div>
+          <div class="info-text" id="trueAngle">-- °</div>
         </div>
         <div class="status-item">
-          <div class="status-label">Connection</div>
-          <div class="status-value" style="font-size: 16px;">)rawliteral";
-  
-  if (tcpConnected) {
-    html += "<span class=\"status-ok\">✓ TCP</span>";
-  } else if (udpConnected) {
-    html += "<span class=\"status-ok\">✓ UDP</span>";
-  } else {
-    html += "<span class=\"status-error\">✗ None</span>";
-  }
-  
-  html += R"rawliteral(
-          </div>
+          <div class="status-label">GPS</div>
+          <div class="status-value" id="sogValue">--<span class="status-unit">kn</span></div>
+          <div class="info-text" id="cogValue">COG: -- °</div>
         </div>
       </div>
     </div>
 
-    <!-- Display Configuration -->
+    <!-- Direction Configuration -->
     <div class="card">
-      <h2>⚙️ Display Configuration</h2>
-      <form id="displayForm">
+      <h2>🧭 Direction Output (shared by all Logic Wind instruments)</h2>
+      <form id="directionForm">
         <div class="form-group">
-          <label>
-            <input type="checkbox" id="enabled" )rawliteral";
-  
-  if (speedPulses[0].enabled) html += "checked";
-  
-  html += R"rawliteral(>
-            Enable Display Output
-          </label>
-        </div>
-        
-        <div class="form-group">
-          <label for="type">Display Type</label>
-          <select id="type">
-            <option value="sumlog" )rawliteral";
-  
-  if (strcmp(speedPulses[0].instrumentType, "sumlog") == 0) html += "selected";
-  
-  html += R"rawliteral(>Sumlog (Speed only)</option>
-            <option value="logicwind" )rawliteral";
-  
-  if (strcmp(speedPulses[0].instrumentType, "logicwind") == 0) html += "selected";
-  
-  html += R"rawliteral(>Logic Wind (Speed + Direction)</option>
+          <label for="directionSource">Direction Source</label>
+          <select id="directionSource">
+            <option value="0">Apparent Wind Angle</option>
+            <option value="1">True Wind Angle</option>
+            <option value="3">Course Over Ground (COG)</option>
           </select>
-          <p class="info-text">Sumlog: pulse output only. Logic Wind: pulse + DAC direction.</p>
+          <p class="info-text">All Logic Wind instruments will show this direction via DAC output.</p>
         </div>
-        
-        <div class="form-group">
-          <label for="dataType">Data Source</label>
-          <select id="speedSource">
-            <option value="0" )rawliteral";
-  
-  if (speedPulses[0].speedSource == DATA_APPARENT_WIND) html += "selected";
-  
-  html += R"rawliteral(>Apparent Wind (MWV-R, VWR)</option>
-            <option value="1" )rawliteral";
-  
-  if (speedPulses[0].speedSource == DATA_TRUE_WIND) html += "selected";
-  
-  html += R"rawliteral(>True Wind (MWV-T, VWT)</option>
-            <option value="2" )rawliteral";
-  
-  if (speedPulses[0].speedSource == DATA_SOG) html += "selected";
-  
-  html += R"rawliteral(>Speed Over Ground (RMC, VTG)</option>
-            <option value="3" )rawliteral";
-  
-  if (speedPulses[0].speedSource == DATA_COG) html += "selected";
-  
-  html += R"rawliteral(>Course Over Ground (RMC, VTG)</option>
-          </select>
-          <p class="info-text">Select which NMEA data to display on the instrument.</p>
-        </div>
-        
-        <div class="form-group">
-          <label for="pulsePin">Pulse Output Pin (GPIO)</label>
-          <input type="number" id="pulsePin" value=")rawliteral";
-  
-  html += String(speedPulses[0].pulsePin);
-  
-  html += R"rawliteral(" min="0" max="39">
-          <p class="info-text">GPIO pin for pulse output (default: 12)</p>
-        </div>
-        
-        <div class="form-group">
-          <label for="pulsesPerKnot">Pulses per Knot</label>
-          <input type="number" id="pulsesPerKnot" value=")rawliteral";
-  
-  html += String(speedPulses[0].pulsesPerKnot, 1);
-  
-  html += R"rawliteral(" step="0.1" min="0.1" max="100">
-          <p class="info-text">Calibration factor (default: 1.0)</p>
-        </div>
-        
-        <div class="form-group">
-          <label for="maxFrequency">Maximum Frequency (Hz)</label>
-          <input type="number" id="maxFrequency" value=")rawliteral";
-  
-  html += String(speedPulses[0].maxFrequency);
-  
-  html += R"rawliteral(" min="10" max="1000">
-          <p class="info-text">Frequency limit (default: 150 Hz)</p>
-        </div>
-        
-        <div class="form-group">
-          <label for="dutyCycle">Pulse Duty Cycle (%)</label>
-          <input type="number" id="dutyCycle" value=")rawliteral";
-  
-  html += String(speedPulses[0].dutyCycle);
-  
-  html += R"rawliteral(" min="1" max="99">
-          <p class="info-text">Pulse width percentage (default: 10%)</p>
-        </div>
-        
-        <button type="submit">💾 Save Speed Pulse Settings</button>
+        <button type="submit">💾 Save Direction Source</button>
       </form>
+    </div>
+
+    <!-- Speed Pulse Outputs -->
+    <div class="card">
+      <h2>⚡ Speed Pulse Outputs</h2>
+      
+      <!-- Speed Pulse 1 -->
+      <div class="pulse-section" id="pulse1Section">
+        <h3>Speed Pulse 1</h3>
+        <form id="pulse1Form">
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="pulse1_enabled">
+              Enable Output
+            </label>
+          </div>
+          
+          <div class="form-group">
+            <label for="pulse1_instrumentType">Instrument Type</label>
+            <select id="pulse1_instrumentType">
+              <option value="sumlog">Sumlog (speed only)</option>
+              <option value="logicwind">Logic Wind (speed + direction)</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="pulse1_speedSource">Speed Source</label>
+            <select id="pulse1_speedSource">
+              <option value="0">Apparent Wind Speed</option>
+              <option value="1">True Wind Speed</option>
+              <option value="2">Speed Over Ground (SOG)</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="pulse1_pulsePin">GPIO Pin</label>
+            <input type="number" id="pulse1_pulsePin" min="0" max="39">
+          </div>
+          
+          <div class="form-group">
+            <label for="pulse1_pulsesPerKnot">Pulses per Knot</label>
+            <input type="number" id="pulse1_pulsesPerKnot" step="0.1" min="0.1" max="100">
+          </div>
+          
+          <div class="form-group">
+            <label for="pulse1_maxFrequency">Max Frequency (Hz)</label>
+            <input type="number" id="pulse1_maxFrequency" min="10" max="1000">
+          </div>
+          
+          <div class="form-group">
+            <label for="pulse1_dutyCycle">Duty Cycle (%)</label>
+            <input type="number" id="pulse1_dutyCycle" min="1" max="99">
+          </div>
+          
+          <button type="submit">💾 Save Pulse 1</button>
+        </form>
+      </div>
+
+      <!-- Speed Pulse 2 -->
+      <div class="pulse-section" id="pulse2Section">
+        <h3>Speed Pulse 2</h3>
+        <form id="pulse2Form">
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="pulse2_enabled">
+              Enable Output
+            </label>
+          </div>
+          
+          <div class="form-group">
+            <label for="pulse2_instrumentType">Instrument Type</label>
+            <select id="pulse2_instrumentType">
+              <option value="sumlog">Sumlog (speed only)</option>
+              <option value="logicwind">Logic Wind (speed + direction)</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="pulse2_speedSource">Speed Source</label>
+            <select id="pulse2_speedSource">
+              <option value="0">Apparent Wind Speed</option>
+              <option value="1">True Wind Speed</option>
+              <option value="2">Speed Over Ground (SOG)</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="pulse2_pulsePin">GPIO Pin</label>
+            <input type="number" id="pulse2_pulsePin" min="0" max="39">
+          </div>
+          
+          <div class="form-group">
+            <label for="pulse2_pulsesPerKnot">Pulses per Knot</label>
+            <input type="number" id="pulse2_pulsesPerKnot" step="0.1" min="0.1" max="100">
+          </div>
+          
+          <div class="form-group">
+            <label for="pulse2_maxFrequency">Max Frequency (Hz)</label>
+            <input type="number" id="pulse2_maxFrequency" min="10" max="1000">
+          </div>
+          
+          <div class="form-group">
+            <label for="pulse2_dutyCycle">Duty Cycle (%)</label>
+            <input type="number" id="pulse2_dutyCycle" min="1" max="99">
+          </div>
+          
+          <button type="submit">💾 Save Pulse 2</button>
+        </form>
+      </div>
+
+      <!-- Speed Pulse 3 -->
+      <div class="pulse-section" id="pulse3Section">
+        <h3>Speed Pulse 3</h3>
+        <form id="pulse3Form">
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="pulse3_enabled">
+              Enable Output
+            </label>
+          </div>
+          
+          <div class="form-group">
+            <label for="pulse3_instrumentType">Instrument Type</label>
+            <select id="pulse3_instrumentType">
+              <option value="sumlog">Sumlog (speed only)</option>
+              <option value="logicwind">Logic Wind (speed + direction)</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="pulse3_speedSource">Speed Source</label>
+            <select id="pulse3_speedSource">
+              <option value="0">Apparent Wind Speed</option>
+              <option value="1">True Wind Speed</option>
+              <option value="2">Speed Over Ground (SOG)</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="pulse3_pulsePin">GPIO Pin</label>
+            <input type="number" id="pulse3_pulsePin" min="0" max="39">
+          </div>
+          
+          <div class="form-group">
+            <label for="pulse3_pulsesPerKnot">Pulses per Knot</label>
+            <input type="number" id="pulse3_pulsesPerKnot" step="0.1" min="0.1" max="100">
+          </div>
+          
+          <div class="form-group">
+            <label for="pulse3_maxFrequency">Max Frequency (Hz)</label>
+            <input type="number" id="pulse3_maxFrequency" min="10" max="1000">
+          </div>
+          
+          <div class="form-group">
+            <label for="pulse3_dutyCycle">Duty Cycle (%)</label>
+            <input type="number" id="pulse3_dutyCycle" min="1" max="99">
+          </div>
+          
+          <button type="submit">💾 Save Pulse 3</button>
+        </form>
+      </div>
     </div>
 
     <!-- Network Configuration -->
@@ -339,13 +379,12 @@ String buildSinglePage() {
   
   html += String(sta_ssid);
   
-  html += R"rawliteral(" placeholder="Enter WiFi network name">
+  html += R"rawliteral(">
         </div>
         
         <div class="form-group">
           <label for="password">WiFi Password</label>
-          <input type="password" id="password" placeholder="Enter WiFi password">
-          <p class="info-text">Leave blank to keep current password</p>
+          <input type="password" id="password" placeholder="Leave blank to keep current">
         </div>
         
         <div class="form-group">
@@ -354,7 +393,7 @@ String buildSinglePage() {
   
   html += String(nmeaHost);
   
-  html += R"rawliteral(" placeholder="192.168.1.100">
+  html += R"rawliteral(">
         </div>
         
         <div class="form-group">
@@ -391,33 +430,90 @@ String buildSinglePage() {
   </div>
 
   <script>
-    // Display form submission
-    document.getElementById('displayForm').addEventListener('submit', async (e) => {
+    // Load initial configuration
+    async function loadConfig() {
+      try {
+        // Load direction source
+        const dirResp = await fetch('/api/status');
+        const dirData = await dirResp.json();
+        if (dirData.globalDirSource !== undefined) {
+          document.getElementById('directionSource').value = dirData.globalDirSource;
+        }
+        
+        // Load pulse configurations
+        for (let i = 1; i <= 3; i++) {
+          const resp = await fetch(`/api/display?num=${i}`);
+          const data = await resp.json();
+          
+          document.getElementById(`pulse${i}_enabled`).checked = data.enabled;
+          document.getElementById(`pulse${i}_instrumentType`).value = data.type || 'sumlog';
+          document.getElementById(`pulse${i}_speedSource`).value = data.speedSource || 0;
+          document.getElementById(`pulse${i}_pulsePin`).value = data.pulsePin || (10 + i * 2);
+          document.getElementById(`pulse${i}_pulsesPerKnot`).value = data.pulsesPerKnot || 1.0;
+          document.getElementById(`pulse${i}_maxFrequency`).value = data.maxFrequency || 150;
+          document.getElementById(`pulse${i}_dutyCycle`).value = data.dutyCycle || 10;
+          
+          // Update section styling
+          const section = document.getElementById(`pulse${i}Section`);
+          if (!data.enabled) {
+            section.classList.add('disabled');
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load config:', error);
+      }
+    }
+    
+    // Direction form submission
+    document.getElementById('directionForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const formData = new URLSearchParams({
-        action: 'save',
-        num: '1',
-        enabled: document.getElementById('enabled').checked ? '1' : '0',
-        type: document.getElementById('type').value,
-        speedSource: document.getElementById('speedSource').value,
-        pulsePin: document.getElementById('pulsePin').value,
-        pulsesPerKnot: document.getElementById('pulsesPerKnot').value,
-        maxFrequency: document.getElementById('maxFrequency').value,
-        dutyCycle: document.getElementById('dutyCycle').value
-      });
+      const dirSource = document.getElementById('directionSource').value;
       
       try {
-        const response = await fetch('/api/display?' + formData, { method: 'POST' });
+        const response = await fetch('/api/direction', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `source=${dirSource}`
+        });
         if (response.ok) {
-          alert('✅ Display settings saved!');
-          setTimeout(() => location.reload(), 1000);
+          alert('✅ Direction source saved!');
         } else {
-          alert('❌ Failed to save settings');
+          alert('❌ Failed to save direction source');
         }
       } catch (error) {
         alert('❌ Error: ' + error.message);
       }
     });
+    
+    // Pulse form submissions
+    for (let i = 1; i <= 3; i++) {
+      document.getElementById(`pulse${i}Form`).addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new URLSearchParams({
+          action: 'save',
+          num: i,
+          enabled: document.getElementById(`pulse${i}_enabled`).checked ? '1' : '0',
+          type: document.getElementById(`pulse${i}_instrumentType`).value,
+          speedSource: document.getElementById(`pulse${i}_speedSource`).value,
+          pulsePin: document.getElementById(`pulse${i}_pulsePin`).value,
+          pulsesPerKnot: document.getElementById(`pulse${i}_pulsesPerKnot`).value,
+          maxFrequency: document.getElementById(`pulse${i}_maxFrequency`).value,
+          dutyCycle: document.getElementById(`pulse${i}_dutyCycle`).value
+        });
+        
+        try {
+          const response = await fetch('/api/display?' + formData, { method: 'POST' });
+          if (response.ok) {
+            alert(`✅ Speed Pulse ${i} saved!`);
+            setTimeout(() => location.reload(), 1000);
+          } else {
+            alert(`❌ Failed to save Speed Pulse ${i}`);
+          }
+        } catch (error) {
+          alert('❌ Error: ' + error.message);
+        }
+      });
+    }
     
     // Network form submission
     document.getElementById('networkForm').addEventListener('submit', async (e) => {
@@ -448,71 +544,49 @@ String buildSinglePage() {
     });
     
     // Auto-refresh status every 2 seconds
-    setInterval(() => {
-      fetch('/api/dataflow')
-        .then(r => r.json())
-        .then(data => {
-          if (!data.display) return;
-          
-          // Select data source based on speedPulses[0].speedSource
-          let sourceData;
-          let sourceName = '';
-          switch(data.speedPulses[0].speedSource) {
-            case 0: // Apparent Wind
-              sourceData = data.apparent;
-              sourceName = 'Apparent Wind';
-              break;
-            case 1: // True Wind
-              sourceData = data.true;
-              sourceName = 'True Wind';
-              break;
-            case 2: // SOG
-              sourceData = data.sog;
-              sourceName = 'SOG';
-              break;
-            case 3: // COG
-              sourceData = data.cog;
-              sourceName = 'COG';
-              break;
-            default:
-              sourceData = data.apparent;
-              sourceName = 'Apparent Wind';
-          }
-          
-          if (sourceData) {
-            // Update wind speed
-            const speedEl = document.querySelector('.status-grid .status-item:nth-child(1) .status-value');
-            if (sourceData.speed > 0 && sourceData.age < 4000) {
-              speedEl.innerHTML = sourceData.speed.toFixed(1) + '<span class="status-unit">kn</span>';
-            } else {
-              speedEl.innerHTML = '<span class="status-error">--</span>';
-            }
-            
-            // Update wind angle
-            const angleEl = document.querySelector('.status-grid .status-item:nth-child(2) .status-value');
-            if (sourceData.angle >= 0 && sourceData.age < 4000) {
-              angleEl.innerHTML = sourceData.angle + '<span class="status-unit">°</span>';
-            } else {
-              angleEl.innerHTML = '<span class="status-error">--</span>';
-            }
-            
-            // Update data source
-            const sourceEl = document.querySelector('.status-grid .status-item:nth-child(3) .status-value');
-            sourceEl.textContent = sourceName + ' (' + (sourceData.source || '-') + ')';
-            
-            // Update age
-            const ageEl = document.querySelector('.status-grid .status-item:nth-child(3) .info-text');
-            if (sourceData.age < 1000) {
-              ageEl.textContent = 'Just now';
-            } else if (sourceData.age < 60000) {
-              ageEl.textContent = Math.floor(sourceData.age / 1000) + 's ago';
-            } else {
-              ageEl.textContent = Math.floor(sourceData.age / 60000) + 'm ago';
-            }
-          }
-        })
-        .catch(() => {});
+    setInterval(async () => {
+      try {
+        const resp = await fetch('/api/dataflow');
+        const data = await resp.json();
+        
+        // Update direction
+        if (data.apparent && data.apparent.angle >= 0) {
+          document.getElementById('directionValue').innerHTML = 
+            data.apparent.angle + '<span class="status-unit">°</span>';
+        }
+        
+        // Update apparent wind
+        if (data.apparent) {
+          document.getElementById('apparentSpeed').innerHTML = 
+            (data.apparent.speed || 0).toFixed(1) + '<span class="status-unit">kn</span>';
+          document.getElementById('apparentAngle').textContent = 
+            (data.apparent.angle || 0) + '°';
+        }
+        
+        // Update true wind
+        if (data.true) {
+          document.getElementById('trueSpeed').innerHTML = 
+            (data.true.speed || 0).toFixed(1) + '<span class="status-unit">kn</span>';
+          document.getElementById('trueAngle').textContent = 
+            (data.true.angle || 0) + '°';
+        }
+        
+        // Update GPS
+        if (data.sog) {
+          document.getElementById('sogValue').innerHTML = 
+            (data.sog.speed || 0).toFixed(1) + '<span class="status-unit">kn</span>';
+        }
+        if (data.cog) {
+          document.getElementById('cogValue').textContent = 
+            'COG: ' + (data.cog.angle || 0) + '°';
+        }
+      } catch (error) {
+        console.error('Status update failed:', error);
+      }
     }, 2000);
+    
+    // Load config on page load
+    loadConfig();
   </script>
 </body>
 </html>
