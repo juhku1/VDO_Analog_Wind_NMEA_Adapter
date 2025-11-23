@@ -113,6 +113,12 @@ extern uint16_t nmeaPort;
 extern char nmeaHost[];
 extern volatile bool tcpConnected;
 extern volatile bool udpConnected;
+
+// Separate NMEA tracking for TCP and UDP
+extern char lastTcpSentence[];
+extern uint32_t lastTcpDataMs;
+extern char lastUdpSentence[];
+extern uint32_t lastUdpDataMs;
 extern char sta_ssid[];
 extern char sta_pass[];
 extern char ap_pass[];

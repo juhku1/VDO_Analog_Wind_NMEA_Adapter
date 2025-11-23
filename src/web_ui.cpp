@@ -293,6 +293,15 @@ static void handleStatus(){
   j += ",\"udp_port\":"; j += prefs.getUShort("p2_port", 10110);
   j += ",\"last_nmea\":\""; j += rawEsc; j += "\"";
   j += ",\"last_nmea_time\":"; j += lastNmeaDataMs;
+  
+  // Separate TCP and UDP NMEA sentences
+  String tcpEsc = String(lastTcpSentence); tcpEsc.replace("\"","\\\"");
+  String udpEsc = String(lastUdpSentence); udpEsc.replace("\"","\\\"");
+  uint32_t now = millis();
+  j += ",\"last_tcp_nmea\":\""; j += tcpEsc; j += "\"";
+  j += ",\"last_tcp_age\":"; j += lastTcpDataMs ? String(now - lastTcpDataMs) : "999999";
+  j += ",\"last_udp_nmea\":\""; j += udpEsc; j += "\"";
+  j += ",\"last_udp_age\":"; j += lastUdpDataMs ? String(now - lastUdpDataMs) : "999999";
   j += ",\"port\":";      j += nmeaPort;
   j += ",\"proto\":\"";      
   j += (nmeaProto==PROTO_TCP?"TCP":nmeaProto==PROTO_HTTP?"HTTP":"UDP"); 
@@ -387,7 +396,7 @@ static void handleDataFlow() {
     j += ",\"angle\":"; j += apparent_hasData ? String((int)apparent_angle_deg) : "0";
     j += ",\"source\":\""; j += apparent_source; j += "\"";
     j += ",\"hasData\":"; j += apparent_hasData ? "true" : "false";
-    j += ",\"lastUpdate\":"; j += apparent_hasData ? String(apparent_lastUpdate_ms) : "0";
+    j += ",\"age\":"; j += apparent_hasData ? String(now - apparent_lastUpdate_ms) : "999999";
     j += ",\"connection\":\"TCP\"";  // TODO: track actual connection
     j += "}";
     
@@ -397,7 +406,7 @@ static void handleDataFlow() {
     j += ",\"angle\":"; j += true_hasData ? String((int)true_angle_deg) : "0";
     j += ",\"source\":\""; j += true_source; j += "\"";
     j += ",\"hasData\":"; j += true_hasData ? "true" : "false";
-    j += ",\"lastUpdate\":"; j += true_hasData ? String(true_lastUpdate_ms) : "0";
+    j += ",\"age\":"; j += true_hasData ? String(now - true_lastUpdate_ms) : "999999";
     j += "}";
     
     // GPS Data (combined)
@@ -408,7 +417,7 @@ static void handleDataFlow() {
     j += ",\"hasSOG\":"; j += gps_hasSOG ? "true" : "false";
     j += ",\"hasCOG\":"; j += gps_hasCOG ? "true" : "false";
     j += ",\"hasHeading\":"; j += gps_hasHeading ? "true" : "false";
-    j += ",\"lastUpdate\":"; j += (gps_hasSOG || gps_hasCOG) ? String(gps_lastUpdate_ms) : "0";
+    j += ",\"age\":"; j += (gps_hasSOG || gps_hasCOG) ? String(now - gps_lastUpdate_ms) : "999999";
     j += ",\"connection\":\"UDP\"";  // TODO: track actual connection
     j += "}";
     
@@ -416,7 +425,7 @@ static void handleDataFlow() {
     j += ",\"vmg\":{";
     j += "\"speed\":"; j += vmg_hasData ? String(vmg_kn, 1) : "0";
     j += ",\"hasData\":"; j += vmg_hasData ? "true" : "false";
-    j += ",\"lastUpdate\":"; j += vmg_hasData ? String(vmg_lastUpdate_ms) : "0";
+    j += ",\"age\":"; j += vmg_hasData ? String(now - vmg_lastUpdate_ms) : "999999";
     j += "}";
     
     // Display info (LITE Multi)

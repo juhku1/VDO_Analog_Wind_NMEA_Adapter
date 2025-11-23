@@ -61,6 +61,12 @@ int lastAngleSent = 0;
 char lastSentenceType[32] = "-";
 char lastSentenceRaw[256] = "-";
 
+// Separate NMEA tracking for TCP and UDP
+char lastTcpSentence[256] = "-";
+uint32_t lastTcpDataMs = 0;
+char lastUdpSentence[256] = "-";
+uint32_t lastUdpDataMs = 0;
+
 // LITE Plus: Multiple data sources - protected by dataMutex
 
 // Apparent Wind data
@@ -422,8 +428,11 @@ void pollTCP(WiFiClient& client){
             xSemaphoreTake(dataMutex, portMAX_DELAY);
             strncpy(lastSentenceRaw, nmeaLineBuf, sizeof(lastSentenceRaw) - 1);
             lastSentenceRaw[sizeof(lastSentenceRaw) - 1] = '\0';
+            strncpy(lastTcpSentence, nmeaLineBuf, sizeof(lastTcpSentence) - 1);
+            lastTcpSentence[sizeof(lastTcpSentence) - 1] = '\0';
             xSemaphoreGive(dataMutex);
             lastNmeaDataMs = millis();
+            lastTcpDataMs = millis();
             if(parseNMEALine(nmeaLineBuf)) {
               // LITE Multi: Update DAC if any Logic Wind instrument is enabled
               bool hasLogicWind = false;
@@ -508,9 +517,12 @@ void pollUDP() {
             xSemaphoreTake(dataMutex, portMAX_DELAY);
             strncpy(lastSentenceRaw, nmeaLineBuf, sizeof(lastSentenceRaw) - 1);
             lastSentenceRaw[sizeof(lastSentenceRaw) - 1] = '\0';
+            strncpy(lastUdpSentence, nmeaLineBuf, sizeof(lastUdpSentence) - 1);
+            lastUdpSentence[sizeof(lastUdpSentence) - 1] = '\0';
             xSemaphoreGive(dataMutex);
             
             lastNmeaDataMs = millis();
+            lastUdpDataMs = millis();
             if (parseNMEALine(nmeaLineBuf)) {
               // LITE Multi: Update DAC if any Logic Wind instrument is enabled
               bool hasLogicWind = false;

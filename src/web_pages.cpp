@@ -413,10 +413,15 @@ String buildSinglePage() {
             <span id="udp-status">UDP: ✗</span>
           </div>
         </div>
+        <div class="data-source" style="margin-bottom: 8px;">
+          <span class="badge badge-tcp">TCP</span>
+          <span class="nmea-raw" id="last-tcp-nmea">--</span>
+          <span id="tcp-nmea-time"></span>
+        </div>
         <div class="data-source">
-          <span>Last NMEA:</span>
-          <span class="nmea-raw" id="last-nmea">--</span>
-          <span id="nmea-time"></span>
+          <span class="badge badge-udp">UDP</span>
+          <span class="nmea-raw" id="last-udp-nmea">--</span>
+          <span id="udp-nmea-time"></span>
         </div>
       </div>
     </div>
@@ -845,10 +850,9 @@ String buildSinglePage() {
         const resp = await fetch('/api/dataflow');
         const data = await resp.json();
         
-        // Helper: format time ago
-        const formatTime = (ms) => {
-          if (!ms) return 'No data';
-          const age = Date.now() - ms;
+        // Helper: format time ago (age in milliseconds)
+        const formatTime = (age) => {
+          if (!age || age > 900000) return 'No data';
           if (age < 1000) return 'Just now';
           if (age < 60000) return Math.floor(age/1000) + 's ago';
           if (age < 3600000) return Math.floor(age/60000) + 'm ago';
@@ -862,7 +866,7 @@ String buildSinglePage() {
           document.getElementById('aws-sentence').textContent = data.apparent.source || 'MWV(R)';
           document.getElementById('aws-connection').textContent = data.apparent.connection || 'TCP';
           document.getElementById('aws-connection').className = 'badge badge-' + (data.apparent.connection || 'tcp').toLowerCase();
-          document.getElementById('aws-time').textContent = formatTime(data.apparent.lastUpdate);
+          document.getElementById('aws-time').textContent = formatTime(data.apparent.age);
         }
         
         // Update True Wind
@@ -879,7 +883,7 @@ String buildSinglePage() {
             document.getElementById('tws-source').className = 'badge badge-nmea';
             document.getElementById('tws-formula').textContent = '';
           }
-          document.getElementById('tws-time').textContent = formatTime(data.true.lastUpdate);
+          document.getElementById('tws-time').textContent = formatTime(data.true.age);
         }
         
         // Update GPS Data
@@ -896,13 +900,13 @@ String buildSinglePage() {
           document.getElementById('gps-sentence').textContent = 'RMC, HDT';
           document.getElementById('gps-connection').textContent = data.gps.connection || 'UDP';
           document.getElementById('gps-connection').className = 'badge badge-' + (data.gps.connection || 'udp').toLowerCase();
-          document.getElementById('gps-time').textContent = formatTime(data.gps.lastUpdate);
+          document.getElementById('gps-time').textContent = formatTime(data.gps.age);
         }
         
         // Update VMG
         if (data.vmg && data.vmg.hasData) {
           document.getElementById('vmg-value').textContent = (data.vmg.speed || 0).toFixed(1);
-          document.getElementById('vmg-time').textContent = formatTime(data.vmg.lastUpdate);
+          document.getElementById('vmg-time').textContent = formatTime(data.vmg.age);
         }
         
         // Update connection status
@@ -923,11 +927,14 @@ String buildSinglePage() {
           document.getElementById('udp-status').textContent = 'UDP: ✗ Not listening';
         }
         
-        // Update last NMEA sentence
-        if (statusData.last_nmea) {
-          document.getElementById('last-nmea').textContent = statusData.last_nmea;
-          document.getElementById('nmea-time').textContent = 
-            '(' + formatTime(statusData.last_nmea_time) + ')';
+        // Update last NMEA sentences (separate for TCP and UDP)
+        if (statusData.last_tcp_nmea && statusData.last_tcp_nmea !== '-') {
+          document.getElementById('last-tcp-nmea').textContent = statusData.last_tcp_nmea;
+          document.getElementById('tcp-nmea-time').textContent = '(' + formatTime(statusData.last_tcp_age) + ')';
+        }
+        if (statusData.last_udp_nmea && statusData.last_udp_nmea !== '-') {
+          document.getElementById('last-udp-nmea').textContent = statusData.last_udp_nmea;
+          document.getElementById('udp-nmea-time').textContent = '(' + formatTime(statusData.last_udp_age) + ')';
         }
       } catch (error) {
         console.error('Status update failed:', error);
