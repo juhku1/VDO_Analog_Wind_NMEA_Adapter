@@ -676,6 +676,12 @@ String buildSinglePage() {
   html += R"rawliteral(" min="1" max="65535">
         </div>
         
+        <div class="form-group" style="display:none;">
+          <select id="nmeaProto">
+            <option value="tcp" selected>TCP</option>
+          </select>
+        </div>
+        
         <h3>UDP Listener</h3>
         
         <div class="form-group">
