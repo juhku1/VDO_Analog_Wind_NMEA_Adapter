@@ -433,11 +433,40 @@ String buildSinglePage() {
     
     // Auto-refresh status every 2 seconds
     setInterval(() => {
-      fetch('/api/status')
+      fetch('/api/dataflow')
         .then(r => r.json())
         .then(data => {
-          // Update status values without full page reload
-          // (simplified - full implementation would update all fields)
+          if (data.apparent) {
+            // Update wind speed
+            const speedEl = document.querySelector('.status-grid .status-item:nth-child(1) .status-value');
+            if (data.apparent.speed > 0 && data.apparent.age < 4000) {
+              speedEl.innerHTML = data.apparent.speed.toFixed(1) + '<span class="status-unit">kn</span>';
+            } else {
+              speedEl.innerHTML = '<span class="status-error">--</span>';
+            }
+            
+            // Update wind angle
+            const angleEl = document.querySelector('.status-grid .status-item:nth-child(2) .status-value');
+            if (data.apparent.angle >= 0 && data.apparent.age < 4000) {
+              angleEl.innerHTML = data.apparent.angle + '<span class="status-unit">°</span>';
+            } else {
+              angleEl.innerHTML = '<span class="status-error">--</span>';
+            }
+            
+            // Update data source
+            const sourceEl = document.querySelector('.status-grid .status-item:nth-child(3) .status-value');
+            sourceEl.textContent = data.apparent.source || '-';
+            
+            // Update age
+            const ageEl = document.querySelector('.status-grid .status-item:nth-child(3) .info-text');
+            if (data.apparent.age < 1000) {
+              ageEl.textContent = 'Just now';
+            } else if (data.apparent.age < 60000) {
+              ageEl.textContent = Math.floor(data.apparent.age / 1000) + 's ago';
+            } else {
+              ageEl.textContent = Math.floor(data.apparent.age / 60000) + 'm ago';
+            }
+          }
         })
         .catch(() => {});
     }, 2000);
