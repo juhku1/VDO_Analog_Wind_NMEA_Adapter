@@ -94,8 +94,10 @@ extern char true_source[];
 
 extern float gps_sog_kn;
 extern float gps_cog_deg;
+extern float gps_heading_deg;
 extern bool gps_hasSOG;
 extern bool gps_hasCOG;
+extern bool gps_hasHeading;
 extern uint32_t gps_lastUpdate_ms;
 
 extern float vmg_kn;
