@@ -949,6 +949,11 @@ String buildSinglePage() {
         const statusResp = await fetch('/status');
         const statusData = await statusResp.json();
         
+        // Update unit preference if changed
+        if (statusData.wind_unit !== undefined) {
+          window.windSpeedUnit = statusData.wind_unit;
+        }
+        
         if (statusData.tcp_connected) {
           document.getElementById('tcp-status').textContent = 
             'TCP: ✓ ' + (statusData.tcp_host || '') + ':' + (statusData.tcp_port || '');

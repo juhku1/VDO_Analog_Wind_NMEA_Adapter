@@ -205,9 +205,11 @@ static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1
   // Wind speed unit
   if (windUnit.length() > 0) {
     uint8_t unit = windUnit.toInt();
+    Serial.printf("[handleSaveCfg] Wind unit received: %s -> %d\n", windUnit.c_str(), unit);
     if (unit <= 1) {  // 0=knots, 1=m/s
       prefs.putUChar("wind_unit", unit);
       windSpeedUnit = unit;
+      Serial.printf("[handleSaveCfg] Wind unit saved: %d\n", unit);
     }
   }
 

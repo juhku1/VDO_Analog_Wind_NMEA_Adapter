@@ -289,6 +289,7 @@ void loadConfig(){
   
   // Load wind speed unit preference (0=knots, 1=m/s)
   windSpeedUnit = prefs.getUChar("wind_unit", 0);
+  Serial.printf("Loaded wind speed unit: %d (%s)\n", windSpeedUnit, windSpeedUnit == 1 ? "m/s" : "knots");
   
   // Load connection profile selection - DEPRECATED
   // Both profiles are now always active simultaneously (TCP + UDP)
