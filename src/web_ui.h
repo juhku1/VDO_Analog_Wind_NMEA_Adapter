@@ -4,7 +4,7 @@
 #include <WiFi.h>
 
 // Constants
-inline constexpr const char* NVS_NAMESPACE = "cfg";
+#define NVS_NAMESPACE "cfg"
 
 // DAC voltage constants (millivolts)
 constexpr int DAC_VMIN = 2000;      // Minimum voltage (2.0V)
