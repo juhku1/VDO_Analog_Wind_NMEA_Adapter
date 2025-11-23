@@ -559,15 +559,15 @@ void connectSTA(){
   WiFi.begin(sta_ssid, sta_pass);
   Serial.printf("Connecting STA to %s", sta_ssid);
   uint32_t t0=millis();
-  while (WiFi.status()!=WL_CONNECTED && millis()-t0<20000){
+  while (WiFi.status()!=WL_CONNECTED && millis()-t0<10000){  // Reduced from 20s to 10s
     Serial.print(".");
     delay(250);
   }
   Serial.println();
   if(WiFi.status()==WL_CONNECTED){
-    Serial.print("STA IP: "); Serial.println(WiFi.localIP());
+    Serial.printf("STA connected in %lums - IP: %s\n", millis()-t0, WiFi.localIP().toString().c_str());
   } else {
-    Serial.println("STA not connected (AP still available).");
+    Serial.printf("STA connection failed after %lums (AP still available)\n", millis()-t0);
   }
 }
 
@@ -575,8 +575,10 @@ void connectSTA(){
 void setup() {
   Serial.begin(115200);
   delay(500);
+  Serial.println("\n\n=== VDO Wind Adapter LITE Multi - Starting ===");
 
   // Initialize FreeRTOS synchronization primitives
+  Serial.println("[1/8] Initializing mutexes...");
   dataMutex = xSemaphoreCreateMutex();
   wifiMutex = xSemaphoreCreateMutex();
   nvsMutex = xSemaphoreCreateMutex();
@@ -586,26 +588,30 @@ void setup() {
     Serial.println("FATAL: Failed to create mutexes!");
     while(1) delay(1000);
   }
-  Serial.println("Mutexes initialized");
+  Serial.println("    Mutexes OK");
 
+  Serial.println("[2/8] Loading configuration from NVS...");
   loadConfig();
+  Serial.println("    Config loaded");
 
   // Initialize WiFi FIRST to reduce power draw during DAC init
+  Serial.println("[3/8] Starting WiFi AP...");
   WiFi.mode(WIFI_AP_STA);
   delay(100);
   
   // Varmista että ap_pass ei ole tyhjä
   if (strlen(ap_pass) < 8) {
     strcpy(ap_pass, AP_PASS);
-    Serial.printf("AP password was empty, using default: %s\n", ap_pass);
+    Serial.printf("    AP password was empty, using default: %s\n", ap_pass);
   }
   
   // Start AP early with delay to stabilize
   WiFi.softAP(AP_SSID, ap_pass);
-  Serial.printf("AP started: %s with password: %s\n", AP_SSID, ap_pass);
+  Serial.printf("    AP started: %s (password: %s)\n", AP_SSID, ap_pass);
   delay(200);  // Let WiFi stack stabilize
   
   // Now initialize DAC after WiFi is stable
+  Serial.println("[4/8] Initializing I2C and DAC...");
   Wire.begin(SDA_PIN, SCL_PIN, I2C_HZ);
   delay(100);  // Give I2C time to initialize
   
@@ -619,11 +625,11 @@ void setup() {
   }
   
   if (dacTries >= 5) {
-    Serial.println("GP8403 init FAILED - continuing without DAC");
+    Serial.println("    GP8403 init FAILED - continuing without DAC");
   } else {
     dac.setDACOutRange(dac.eOutputRange10V);
     dacReady = true;
-    Serial.println("GP8403 init OK");
+    Serial.println("    GP8403 init OK");
   }
   
   if (dacReady) {
@@ -632,18 +638,24 @@ void setup() {
   }
 
   // LITE Multi: Initialize enabled displays
+  Serial.println("[5/8] Initializing speed pulse outputs...");
   for (int i = 0; i < 3; i++) {
     if (speedPulses[i].enabled) {
       startSpeedPulse(i);
+      Serial.printf("    Pulse %d started on pin %d\n", i+1, speedPulses[i].pulsePin);
     }
   }
 
   // Käynnistä STA after AP and DAC
+  Serial.println("[6/8] Connecting to WiFi station...");
   connectSTA();
   
+  Serial.println("[7/8] Binding network transports (TCP/UDP)...");
   bindTransport();
 
+  Serial.println("[8/8] Starting web server...");
   setupWebUI(server);
+  Serial.println("    Web server started");
   
   // Create NMEA polling task on Core 1 BEFORE starting web server
   xTaskCreatePinnedToCore(
@@ -655,7 +667,8 @@ void setup() {
     &nmeaPollTask,         // Task handle
     1                      // Core 1 (0=Core 0, 1=Core 1)
   );
-  Serial.println("NMEA polling task created");
+  Serial.println("    NMEA polling task created on Core 1");
+  Serial.println("\n=== Setup complete - System ready ===\n");
   
   // Simple toggle endpoints for NMEA processing
   server.on("/unfreeze", HTTP_GET, [](){
