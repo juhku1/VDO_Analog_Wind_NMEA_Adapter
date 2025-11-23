@@ -106,6 +106,7 @@ char nmeaHost[64] = "192.168.4.1";
 // Persistent TCP client for real-time wind data
 WiFiClient tcpClient;
 uint32_t lastTcpAttempt = 0;
+uint8_t tcpFailCount = 0;  // Count consecutive TCP failures to back off
 
 // UDP client for OpenPlotter/secondary source
 WiFiUDP udpClient;
@@ -379,20 +380,51 @@ void saveNetworkConfig(const char* ssid, const char* pass) {
 
 /* ========= UDP/TCP BIND & POLL ========= */
 void ensureTCPConnected(WiFiClient& client){
-  if (client.connected()) return;
+  if (client.connected()) {
+    tcpFailCount = 0;  // Reset failure count on successful connection
+    return;
+  }
+  
   uint32_t now = millis();
   if (now < lastTcpAttempt) return;
-  lastTcpAttempt = now + 3000;
   
-  Serial.printf("TCP connect to %s:%u...\n", nmeaHost, nmeaPort);
+  // Exponential backoff: 5s, 10s, 20s, 30s max
+  uint8_t backoffMultiplier = min((uint8_t)tcpFailCount, (uint8_t)2);
+  uint32_t backoff = 5000 * (1 << backoffMultiplier);  // 5s, 10s, 20s
+  if (backoff > 30000) backoff = 30000;  // Cap at 30s
+  lastTcpAttempt = now + backoff;
+  
+  // Skip TCP connection if host is empty or invalid
+  if (strlen(nmeaHost) == 0 || nmeaPort == 0) {
+    return;
+  }
+  
+  // Only log first few attempts to avoid spam
+  if (tcpFailCount < 3) {
+    Serial.printf("TCP connect to %s:%u (attempt %d, next retry in %lus)...\n", 
+                  nmeaHost, nmeaPort, tcpFailCount + 1, backoff / 1000);
+  }
+  
   client.stop();
-  client.setTimeout(100);  // Reduced from 1000ms to prevent blocking when host is offline
   
-  if(client.connect(nmeaHost, nmeaPort)) {
-    Serial.println("TCP connected! Setting non-blocking mode...");
-    client.setTimeout(0);
+  // Use minimal timeout to prevent blocking
+  client.setTimeout(50);  // 50ms timeout for quick failure
+  
+  // Attempt connection - this may still block briefly
+  uint32_t connectStart = millis();
+  bool connected = client.connect(nmeaHost, nmeaPort);
+  uint32_t connectTime = millis() - connectStart;
+  
+  if(connected) {
+    Serial.printf("TCP connected in %lums! Setting non-blocking mode...\n", connectTime);
+    client.setTimeout(0);  // Non-blocking mode for data reading
+    tcpFailCount = 0;  // Reset failure count
   } else {
-    Serial.println("TCP connect failed");
+    if (tcpFailCount < 3) {
+      Serial.printf("TCP connect failed after %lums\n", connectTime);
+    }
+    tcpFailCount++;
+    if (tcpFailCount > 10) tcpFailCount = 10;  // Cap at 10 to prevent overflow
   }
 }
 
@@ -575,10 +607,11 @@ void connectSTA(){
 void setup() {
   Serial.begin(115200);
   delay(500);
+  uint32_t setupStart = millis();
   Serial.println("\n\n=== VDO Wind Adapter LITE Multi - Starting ===");
 
   // Initialize FreeRTOS synchronization primitives
-  Serial.println("[1/8] Initializing mutexes...");
+  Serial.printf("[1/8] Initializing mutexes... (t=%lums)\n", millis() - setupStart);
   dataMutex = xSemaphoreCreateMutex();
   wifiMutex = xSemaphoreCreateMutex();
   nvsMutex = xSemaphoreCreateMutex();
@@ -588,14 +621,14 @@ void setup() {
     Serial.println("FATAL: Failed to create mutexes!");
     while(1) delay(1000);
   }
-  Serial.println("    Mutexes OK");
+  Serial.printf("    Mutexes OK (t=%lums)\n", millis() - setupStart);
 
-  Serial.println("[2/8] Loading configuration from NVS...");
+  Serial.printf("[2/8] Loading configuration from NVS... (t=%lums)\n", millis() - setupStart);
   loadConfig();
-  Serial.println("    Config loaded");
+  Serial.printf("    Config loaded (t=%lums)\n", millis() - setupStart);
 
   // Initialize WiFi FIRST to reduce power draw during DAC init
-  Serial.println("[3/8] Starting WiFi AP...");
+  Serial.printf("[3/8] Starting WiFi AP... (t=%lums)\n", millis() - setupStart);
   WiFi.mode(WIFI_AP_STA);
   delay(100);
   
@@ -607,11 +640,11 @@ void setup() {
   
   // Start AP early with delay to stabilize
   WiFi.softAP(AP_SSID, ap_pass);
-  Serial.printf("    AP started: %s (password: %s)\n", AP_SSID, ap_pass);
+  Serial.printf("    AP started: %s (password: %s) (t=%lums)\n", AP_SSID, ap_pass, millis() - setupStart);
   delay(200);  // Let WiFi stack stabilize
   
   // Now initialize DAC after WiFi is stable
-  Serial.println("[4/8] Initializing I2C and DAC...");
+  Serial.printf("[4/8] Initializing I2C and DAC... (t=%lums)\n", millis() - setupStart);
   Wire.begin(SDA_PIN, SCL_PIN, I2C_HZ);
   delay(100);  // Give I2C time to initialize
   
@@ -638,7 +671,7 @@ void setup() {
   }
 
   // LITE Multi: Initialize enabled displays
-  Serial.println("[5/8] Initializing speed pulse outputs...");
+  Serial.printf("[5/8] Initializing speed pulse outputs... (t=%lums)\n", millis() - setupStart);
   for (int i = 0; i < 3; i++) {
     if (speedPulses[i].enabled) {
       startSpeedPulse(i);
@@ -647,15 +680,17 @@ void setup() {
   }
 
   // Käynnistä STA after AP and DAC
-  Serial.println("[6/8] Connecting to WiFi station...");
+  Serial.printf("[6/8] Connecting to WiFi station... (t=%lums)\n", millis() - setupStart);
   connectSTA();
+  Serial.printf("    WiFi STA complete (t=%lums)\n", millis() - setupStart);
   
-  Serial.println("[7/8] Binding network transports (TCP/UDP)...");
+  Serial.printf("[7/8] Binding network transports (TCP/UDP)... (t=%lums)\n", millis() - setupStart);
   bindTransport();
+  Serial.printf("    Transports bound (t=%lums)\n", millis() - setupStart);
 
-  Serial.println("[8/8] Starting web server...");
+  Serial.printf("[8/8] Starting web server... (t=%lums)\n", millis() - setupStart);
   setupWebUI(server);
-  Serial.println("    Web server started");
+  Serial.printf("    Web server started (t=%lums)\n", millis() - setupStart);
   
   // Create NMEA polling task on Core 1 BEFORE starting web server
   xTaskCreatePinnedToCore(
@@ -667,8 +702,8 @@ void setup() {
     &nmeaPollTask,         // Task handle
     1                      // Core 1 (0=Core 0, 1=Core 1)
   );
-  Serial.println("    NMEA polling task created on Core 1");
-  Serial.println("\n=== Setup complete - System ready ===\n");
+  Serial.printf("    NMEA polling task created on Core 1 (t=%lums)\n", millis() - setupStart);
+  Serial.printf("\n=== Setup complete - System ready (total: %lums) ===\n\n", millis() - setupStart);
   
   // Simple toggle endpoints for NMEA processing
   server.on("/unfreeze", HTTP_GET, [](){
@@ -692,7 +727,9 @@ void loop() {
   // Core 0: Dedicated to web server (NMEA polling now runs on Core 1)
   static uint32_t lastDebug = 0;
   static uint32_t lastTimeoutCheck = 0;
+  static uint32_t loopCount = 0;
   uint32_t now = millis();
+  loopCount++;
   
   // Check for data timeout every 100ms (ensures speed/direction zero when connection is lost)
   if (now - lastTimeoutCheck > 100) {
@@ -709,7 +746,8 @@ void loop() {
   
   // Heartbeat every 10 seconds
   if (now - lastDebug > 10000) {
-    Serial.printf("Loop: %u ms\n", now);
+    Serial.printf("Loop: %u ms (iterations: %u, rate: %.1f Hz)\n", now, loopCount, loopCount / 10.0);
+    loopCount = 0;
     lastDebug = now;
   }
   
