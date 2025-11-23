@@ -240,10 +240,6 @@ bool parseHDM(char* line){
 
 bool parseNMEALine(char* line){
   if(strlen(line)<6 || line[0]!='$') return false;
-  
-  // DEBUG: Print received NMEA line
-  Serial.printf("NMEA RX: %s\n", line);
-  
   static char tmp[256];
   size_t L = min(strlen(line), sizeof(tmp)-1);
   
