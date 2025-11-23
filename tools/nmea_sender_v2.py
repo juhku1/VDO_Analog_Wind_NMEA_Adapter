@@ -28,6 +28,8 @@ class NMEASender:
         self.udp_socket = None
         self.tcp_connected = False
         self.udp_bound = False
+        self.last_tcp_reconnect_attempt = 0  # Track last reconnect attempt
+        self.tcp_reconnect_interval = 10  # Reconnect every 10 seconds if disconnected
         self.sending = False
         self.send_thread = None
         
@@ -241,7 +243,7 @@ class NMEASender:
                 if self.tcp_socket:
                     self.tcp_socket.close()
                 self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self.tcp_socket.settimeout(5)
+                self.tcp_socket.settimeout(2)  # Reduced from 5s to 2s for faster failure
                 self.tcp_socket.connect((ip, self.tcp_port.get()))
                 self.tcp_connected = True
             
@@ -273,24 +275,53 @@ class NMEASender:
         """Main sending loop"""
         while self.sending:
             try:
+                # Auto-reconnect TCP if disconnected (but not too often)
+                if self.tcp_enabled.get() and not self.tcp_connected:
+                    current_time = time.time()
+                    if current_time - self.last_tcp_reconnect_attempt > self.tcp_reconnect_interval:
+                        self.last_tcp_reconnect_attempt = current_time
+                        print(f"Attempting TCP reconnect to {self.esp_ip.get()}:{self.tcp_port.get()}...")
+                        try:
+                            if self.tcp_socket:
+                                self.tcp_socket.close()
+                            self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                            self.tcp_socket.settimeout(2)
+                            self.tcp_socket.connect((self.esp_ip.get(), self.tcp_port.get()))
+                            self.tcp_connected = True
+                            print("TCP reconnected successfully!")
+                            self.root.after(0, lambda: self.status_label.config(
+                                text="Status: TCP ✓ (reconnected)", foreground="green"))
+                        except Exception as e:
+                            print(f"TCP reconnect failed: {e}")
+                            self.tcp_connected = False
+                
                 # Send TCP sentences
                 if self.tcp_connected and self.tcp_socket:
                     tcp_sentences = []
-                    if self.tcp_mwvr.get():
-                        sentence = self.generate_mwv_r()
-                        tcp_sentences.append(sentence)
-                        self.tcp_socket.send(sentence.encode())
-                    if self.tcp_mwvt.get():
-                        sentence = self.generate_mwv_t()
-                        tcp_sentences.append(sentence)
-                        self.tcp_socket.send(sentence.encode())
-                    if self.tcp_vwr.get():
-                        sentence = self.generate_vwr()
-                        tcp_sentences.append(sentence)
-                        self.tcp_socket.send(sentence.encode())
-                    
-                    if tcp_sentences:
-                        self.last_tcp_sentence.set(tcp_sentences[-1].strip())
+                    try:
+                        if self.tcp_mwvr.get():
+                            sentence = self.generate_mwv_r()
+                            tcp_sentences.append(sentence)
+                            self.tcp_socket.send(sentence.encode())
+                        if self.tcp_mwvt.get():
+                            sentence = self.generate_mwv_t()
+                            tcp_sentences.append(sentence)
+                            self.tcp_socket.send(sentence.encode())
+                        if self.tcp_vwr.get():
+                            sentence = self.generate_vwr()
+                            tcp_sentences.append(sentence)
+                            self.tcp_socket.send(sentence.encode())
+                        
+                        if tcp_sentences:
+                            self.last_tcp_sentence.set(tcp_sentences[-1].strip())
+                    except (BrokenPipeError, ConnectionResetError, OSError) as e:
+                        print(f"TCP send failed: {e} - marking as disconnected")
+                        self.tcp_connected = False
+                        if self.tcp_socket:
+                            self.tcp_socket.close()
+                        self.tcp_socket = None
+                        self.root.after(0, lambda: self.status_label.config(
+                            text="Status: TCP ✗ (will retry)", foreground="orange"))
                 
                 # Send UDP sentences
                 if self.udp_bound and self.udp_socket:
@@ -321,9 +352,9 @@ class NMEASender:
                 time.sleep(1)  # Send every 1 second
                 
             except Exception as e:
-                print(f"Send error: {e}")
-                self.sending = False
-                self.root.after(0, self.stop_sending)
+                print(f"Unexpected send error: {e}")
+                # Don't stop sending on unexpected errors - just log and continue
+                time.sleep(1)
     
     def start_sending(self):
         """Start sending NMEA data"""
