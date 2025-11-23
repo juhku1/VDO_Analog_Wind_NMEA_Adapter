@@ -140,10 +140,29 @@ bool parseVWR(char* line){
   float newSpeed = 0.0f;
   bool hasSpeed = false;
   
-  if(n>=4) {
+  // VWR format: $IIVWR,angle,L/R,speed_kn,N,speed_ms,M,speed_kmh,K*checksum
+  // We need to check which speed field has valid data and correct unit
+  if(n>=5) {
     float spd = atof(f[3]);
-    if(spd>=0 && spd<200) {
+    char unit = toupper((unsigned char)f[4][0]);
+    if(spd>=0 && spd<200 && unit=='N') {  // N = knots
       newSpeed = spd;
+      hasSpeed = true;
+    }
+  }
+  if(!hasSpeed && n>=7) {  // Try m/s field
+    float spd = atof(f[5]);
+    char unit = toupper((unsigned char)f[6][0]);
+    if(spd>=0 && spd<200 && unit=='M') {  // M = m/s
+      newSpeed = spd * 1.94384;  // Convert m/s to knots
+      hasSpeed = true;
+    }
+  }
+  if(!hasSpeed && n>=9) {  // Try km/h field
+    float spd = atof(f[7]);
+    char unit = toupper((unsigned char)f[8][0]);
+    if(spd>=0 && spd<200 && unit=='K') {  // K = km/h
+      newSpeed = spd * 0.539957;  // Convert km/h to knots
       hasSpeed = true;
     }
   }
