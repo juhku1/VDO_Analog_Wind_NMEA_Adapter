@@ -34,29 +34,28 @@ enum WindDataType {
   DATA_COG = 3             // Course Over Ground - from GPS (RMC/VTG)
 };
 
-// LITE Multi: Simplified display configuration
-struct DisplayConfig {
+// LITE Multi: Speed Pulse Output configuration
+struct SpeedPulseConfig {
   bool enabled;
-  char type[16];         // "logicwind" | "sumlog"
-  uint8_t speedSource;   // Which data source for SPEED (WindDataType)
-  int offsetDeg;         // Logic Wind adjustment (DEPRECATED - use global)
-  float sumlogK;         // Pulse per knot
-  int sumlogFmax;        // Max frequency
-  int pulseDuty;         // Pulse duty %
-  int pulsePin;          // GPIO pin
+  char instrumentType[16]; // "logicwind" | "sumlog"
+  uint8_t speedSource;     // Which data source for SPEED (WindDataType)
+  float pulsesPerKnot;     // Calibration: pulses per knot
+  int maxFrequency;        // Max frequency (Hz)
+  int dutyCycle;           // Pulse duty cycle (%)
+  int pulsePin;            // GPIO output pin
   
   // Runtime data (updated automatically from speedSource)
-  float currentSpeed_kn;  // Current speed for this display
-  uint32_t lastUpdate_ms; // Timestamp of last update
+  float currentSpeed_kn;   // Current speed for this output
+  uint32_t lastUpdate_ms;  // Timestamp of last update
 };
 
 // Global variables from wind_project.ino
 extern Preferences prefs;
-extern DisplayConfig displays[3];  // LITE Multi: 3 displays
+extern SpeedPulseConfig speedPulses[3];  // LITE Multi: 3 speed pulse outputs
 
-// LITE Multi: Global direction (shared by all Logic Wind displays)
-extern uint8_t global_direction_source;  // Which data source for DIRECTION
-extern int global_wind_angle;            // Current global direction
+// LITE Multi: Global direction (shared by all Logic Wind instruments)
+extern uint8_t directionSource;  // Which data source for DIRECTION
+extern int directionAngle;       // Current global direction
 
 // FreeRTOS synchronization
 extern SemaphoreHandle_t dataMutex;
@@ -115,18 +114,18 @@ extern uint32_t lastNmeaDataMs;
 #define AP_SSID "VDO-Cal"
 #define AP_PASS "wind12345"
 
-// Core funktiot (LITE Multi: displayNum parameters restored)
+// Core funktiot (LITE Multi: speed pulse functions)
 extern void loadConfig();
 void nmeaPollTaskFunc(void *pvParameters);
-void saveDisplayConfig(int displayNum = -1);
+void saveSpeedPulseConfig(int pulseNum = -1);
 void saveNetworkConfig(const char* ssid, const char* pass);
-void startDisplay(int displayNum);
-void stopDisplay(int displayNum);
-void updateDisplayPulse(int displayNum);
+void startSpeedPulse(int pulseNum);
+void stopSpeedPulse(int pulseNum);
+void updateSpeedPulse(int pulseNum);
 void setupWebUI(WebServer& server);
 void bindTransport();
 void connectSTA();
-void setOutputsDeg(int deg);  // Global direction
+void setDirectionOutput(int degrees);  // Global direction to DAC
 
 // Page builders (web_pages.cpp) - LITE: single page
 String buildSinglePage();

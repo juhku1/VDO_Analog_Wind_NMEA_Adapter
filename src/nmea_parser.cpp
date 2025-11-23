@@ -12,7 +12,7 @@ inline int wrap360(int deg) {
 
 // External references to global state (LITE Plus: GPS restored)
 extern SemaphoreHandle_t dataMutex;
-extern DisplayConfig display;
+extern SpeedPulseConfig speedPulses[3];
 extern bool hasMwvR;
 extern bool hasMwvT;
 extern bool hasVwr;

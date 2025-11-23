@@ -41,12 +41,12 @@ SemaphoreHandle_t pauseAckSemaphore = NULL;  // For Core 1 pause acknowledgment
 
 Preferences prefs;
 
-// LITE Multi: 3 displays
-DisplayConfig displays[3];
+// LITE Multi: 3 speed pulse outputs
+SpeedPulseConfig speedPulses[3];
 
-// LITE Multi: Global direction (shared by all Logic Wind displays)
-uint8_t global_direction_source = DATA_APPARENT_WIND;  // Default: Apparent Wind angle
-int global_wind_angle = 0;
+// LITE Multi: Global direction (shared by all Logic Wind instruments)
+uint8_t directionSource = DATA_APPARENT_WIND;  // Default: Apparent Wind angle
+int directionAngle = 0;
 
 // LEDC channels for 3 displays
 const uint8_t LEDC_CHANNELS[3] = {0, 1, 2};
@@ -180,48 +180,48 @@ void nmeaPollTaskFunc(void *pvParameters) {
 }
 
 /* ========= Asetusten tallennus ========= */
-void saveDisplayConfig(int displayNum) {
+void saveSpeedPulseConfig(int displayNum) {
   xSemaphoreTake(nvsMutex, portMAX_DELAY);
   prefs.begin(NVS_NAMESPACE, false);
   
   if (displayNum == -1) {
     // Save all displays + global direction
-    prefs.putUChar("global_dir", global_direction_source);
+    prefs.putUChar("global_dir", directionSource);
     
     for (int i = 0; i < 3; i++) {
       char key[16];
       snprintf(key, sizeof(key), "d%d_enabled", i);
-      prefs.putBool(key, displays[i].enabled);
+      prefs.putBool(key, speedPulses[i].enabled);
       snprintf(key, sizeof(key), "d%d_type", i);
-      prefs.putString(key, displays[i].type);
+      prefs.putString(key, speedPulses[i].instrumentType);
       snprintf(key, sizeof(key), "d%d_speedSrc", i);
-      prefs.putUChar(key, displays[i].speedSource);
+      prefs.putUChar(key, speedPulses[i].speedSource);
       snprintf(key, sizeof(key), "d%d_sumlogK", i);
-      prefs.putFloat(key, displays[i].sumlogK);
+      prefs.putFloat(key, speedPulses[i].pulsesPerKnot);
       snprintf(key, sizeof(key), "d%d_fmax", i);
-      prefs.putInt(key, displays[i].sumlogFmax);
+      prefs.putInt(key, speedPulses[i].maxFrequency);
       snprintf(key, sizeof(key), "d%d_duty", i);
-      prefs.putInt(key, displays[i].pulseDuty);
+      prefs.putInt(key, speedPulses[i].dutyCycle);
       snprintf(key, sizeof(key), "d%d_pin", i);
-      prefs.putInt(key, displays[i].pulsePin);
+      prefs.putInt(key, speedPulses[i].pulsePin);
     }
   } else if (displayNum >= 0 && displayNum < 3) {
     // Save single display
     char key[16];
     snprintf(key, sizeof(key), "d%d_enabled", displayNum);
-    prefs.putBool(key, displays[displayNum].enabled);
+    prefs.putBool(key, speedPulses[displayNum].enabled);
     snprintf(key, sizeof(key), "d%d_type", displayNum);
-    prefs.putString(key, displays[displayNum].type);
+    prefs.putString(key, speedPulses[displayNum].instrumentType);
     snprintf(key, sizeof(key), "d%d_speedSrc", displayNum);
-    prefs.putUChar(key, displays[displayNum].speedSource);
+    prefs.putUChar(key, speedPulses[displayNum].speedSource);
     snprintf(key, sizeof(key), "d%d_sumlogK", displayNum);
-    prefs.putFloat(key, displays[displayNum].sumlogK);
+    prefs.putFloat(key, speedPulses[displayNum].pulsesPerKnot);
     snprintf(key, sizeof(key), "d%d_fmax", displayNum);
-    prefs.putInt(key, displays[displayNum].sumlogFmax);
+    prefs.putInt(key, speedPulses[displayNum].maxFrequency);
     snprintf(key, sizeof(key), "d%d_duty", displayNum);
-    prefs.putInt(key, displays[displayNum].pulseDuty);
+    prefs.putInt(key, speedPulses[displayNum].dutyCycle);
     snprintf(key, sizeof(key), "d%d_pin", displayNum);
-    prefs.putInt(key, displays[displayNum].pulsePin);
+    prefs.putInt(key, speedPulses[displayNum].pulsePin);
   }
   
   prefs.end();
@@ -232,40 +232,39 @@ void loadConfig(){
   prefs.begin(NVS_NAMESPACE, false);
   
   // LITE Multi: Load global direction source
-  global_direction_source = prefs.getUChar("global_dir", DATA_APPARENT_WIND);
+  directionSource = prefs.getUChar("global_dir", DATA_APPARENT_WIND);
   
   // LITE Multi: Load 3 displays
   for (int i = 0; i < 3; i++) {
     char key[16];
     
     snprintf(key, sizeof(key), "d%d_enabled", i);
-    displays[i].enabled = prefs.getBool(key, i == 0);  // Only display 0 enabled by default
+    speedPulses[i].enabled = prefs.getBool(key, i == 0);  // Only display 0 enabled by default
     
     snprintf(key, sizeof(key), "d%d_type", i);
     String typeStr = prefs.getString(key, "sumlog");
-    strncpy(displays[i].type, typeStr.c_str(), sizeof(displays[i].type) - 1);
-    displays[i].type[sizeof(displays[i].type) - 1] = '\0';
+    strncpy(speedPulses[i].instrumentType, typeStr.c_str(), sizeof(speedPulses[i].instrumentType) - 1);
+    speedPulses[i].instrumentType[sizeof(speedPulses[i].instrumentType) - 1] = '\0';
     
     snprintf(key, sizeof(key), "d%d_speedSrc", i);
-    displays[i].speedSource = prefs.getUChar(key, DATA_APPARENT_WIND);
+    speedPulses[i].speedSource = prefs.getUChar(key, DATA_APPARENT_WIND);
     
     snprintf(key, sizeof(key), "d%d_sumlogK", i);
-    displays[i].sumlogK = prefs.getFloat(key, 1.0f);
+    speedPulses[i].pulsesPerKnot = prefs.getFloat(key, 1.0f);
     
     snprintf(key, sizeof(key), "d%d_fmax", i);
-    displays[i].sumlogFmax = prefs.getInt(key, 150);
+    speedPulses[i].maxFrequency = prefs.getInt(key, 150);
     
     snprintf(key, sizeof(key), "d%d_duty", i);
-    displays[i].pulseDuty = prefs.getInt(key, 10);
+    speedPulses[i].dutyCycle = prefs.getInt(key, 10);
     
     snprintf(key, sizeof(key), "d%d_pin", i);
-    displays[i].pulsePin = prefs.getInt(key, 12 + i * 2);  // Default: 12, 14, 16
+    speedPulses[i].pulsePin = prefs.getInt(key, 12 + i * 2);  // Default: 12, 14, 16
     
-    displays[i].offsetDeg = 0;  // DEPRECATED
     
     // Initialize runtime data
-    displays[i].currentSpeed_kn = 0.0f;
-    displays[i].lastUpdate_ms = 0;
+    speedPulses[i].currentSpeed_kn = 0.0f;
+    speedPulses[i].lastUpdate_ms = 0;
   }
   
   offsetDeg = prefs.getInt("offset", 0);
@@ -417,9 +416,16 @@ void pollTCP(WiFiClient& client){
             xSemaphoreGive(dataMutex);
             lastNmeaDataMs = millis();
             if(parseNMEALine(nmeaLineBuf)) {
-              // LITE: Update DAC if Logic Wind type
-              if (display.enabled && strcmp(display.type, "logicwind") == 0) {
-                setOutputsDeg(0);
+              // LITE Multi: Update DAC if any Logic Wind instrument is enabled
+              bool hasLogicWind = false;
+              for (int i = 0; i < 3; i++) {
+                if (speedPulses[i].enabled && strcmp(speedPulses[i].instrumentType, "logicwind") == 0) {
+                  hasLogicWind = true;
+                  break;
+                }
+              }
+              if (hasLogicWind) {
+                setDirectionOutput(directionAngle);
               }
             }
             nmeaLineBufLen = 0;
@@ -497,9 +503,16 @@ void pollUDP() {
             
             lastNmeaDataMs = millis();
             if (parseNMEALine(nmeaLineBuf)) {
-              // LITE: Update DAC if Logic Wind type
-              if (display.enabled && strcmp(display.type, "logicwind") == 0) {
-                setOutputsDeg(0);
+              // LITE Multi: Update DAC if any Logic Wind instrument is enabled
+              bool hasLogicWind = false;
+              for (int i = 0; i < 3; i++) {
+                if (speedPulses[i].enabled && strcmp(speedPulses[i].instrumentType, "logicwind") == 0) {
+                  hasLogicWind = true;
+                  break;
+                }
+              }
+              if (hasLogicWind) {
+                setDirectionOutput(directionAngle);
               }
             }
             nmeaLineBufLen = 0;
@@ -594,13 +607,13 @@ void setup() {
   
   if (dacReady) {
     // LITE Multi: Initialize DAC to 0 degrees
-    setOutputsDeg(0);
+    setDirectionOutput(0);
   }
 
   // LITE Multi: Initialize enabled displays
   for (int i = 0; i < 3; i++) {
-    if (displays[i].enabled) {
-      startDisplay(i);
+    if (speedPulses[i].enabled) {
+      startSpeedPulse(i);
     }
   }
 
@@ -650,11 +663,11 @@ void loop() {
   // Check for data timeout every 100ms (ensures speed/direction zero when connection is lost)
   if (now - lastTimeoutCheck > 100) {
     lastTimeoutCheck = now;
-    updateGlobalDirection();  // LITE Multi: update global direction
+    updateDirectionOutput();  // LITE Multi: update global direction
     for (int i = 0; i < 3; i++) {
-      if (displays[i].enabled) {
-        updateDisplaySpeed(i);   // Update speed from selected source
-        updateDisplayPulse(i);   // Update pulse output
+      if (speedPulses[i].enabled) {
+        updateSpeedPulseSpeed(i);   // Update speed from selected source
+        updateSpeedPulse(i);   // Update pulse output
       }
     }
   }

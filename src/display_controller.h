@@ -3,25 +3,25 @@
 #include <Arduino.h>
 #include "web_ui.h"
 
-/* ========= Display Controller Module ========= */
-// Handles pulse generation and DAC output for wind displays
-// LITE Multi: 3 displays with global direction
+/* ========= Speed Pulse Controller Module ========= */
+// Handles pulse generation and DAC output for wind instruments
+// LITE Multi: 3 speed pulse outputs with shared direction
 
-// Start/stop display output
-void startDisplay(int displayNum);
-void stopDisplay(int displayNum);
+// Start/stop speed pulse output
+void startSpeedPulse(int pulseNum);
+void stopSpeedPulse(int pulseNum);
 
-// Update global direction from selected source
-void updateGlobalDirection();
+// Update direction output from selected source
+void updateDirectionOutput();
 
-// Update display speed from selected source
-void updateDisplaySpeed(int displayNum);
+// Update speed pulse from selected source
+void updateSpeedPulseSpeed(int pulseNum);
 
-// Update display pulse output
-void updateDisplayPulse(int displayNum);
+// Update speed pulse frequency
+void updateSpeedPulse(int pulseNum);
 
-// Set DAC output for global direction (Logic Wind only)
-void setOutputsDeg(int degrees);
+// Set DAC output for direction (shared by all Logic Wind instruments)
+void setDirectionOutput(int degrees);
 
 // Helper: clamp voltage to valid range
 int mvClamp(int mv);

@@ -36,43 +36,43 @@ static void handleDisplayAPI() {
   if (g_srv->method() == HTTP_GET) {
     // Return display configuration as JSON
     String json = "{";
-    json += "\"enabled\":" + String(displays[idx].enabled ? "true" : "false");
-    json += ",\"type\":\"" + String(displays[idx].type) + "\"";
-    json += ",\"speedSource\":" + String(displays[idx].speedSource);
-    json += ",\"sumlogK\":" + String(displays[idx].sumlogK);
-    json += ",\"sumlogFmax\":" + String(displays[idx].sumlogFmax);
-    json += ",\"pulseDuty\":" + String(displays[idx].pulseDuty);
-    json += ",\"pulsePin\":" + String(displays[idx].pulsePin);
+    json += "\"enabled\":" + String(speedPulses[idx].enabled ? "true" : "false");
+    json += ",\"type\":\"" + String(speedPulses[idx].instrumentType) + "\"";
+    json += ",\"speedSource\":" + String(speedPulses[idx].speedSource);
+    json += ",\"sumlogK\":" + String(speedPulses[idx].pulsesPerKnot);
+    json += ",\"sumlogFmax\":" + String(speedPulses[idx].maxFrequency);
+    json += ",\"pulseDuty\":" + String(speedPulses[idx].dutyCycle);
+    json += ",\"pulsePin\":" + String(speedPulses[idx].pulsePin);
     json += "}";
     g_srv->send(200, "application/json", json);
   } else if (g_srv->method() == HTTP_POST && action == "save") {
     // Save display settings
-    if (g_srv->hasArg("enabled")) displays[idx].enabled = g_srv->arg("enabled").toInt() != 0;
+    if (g_srv->hasArg("enabled")) speedPulses[idx].enabled = g_srv->arg("enabled").toInt() != 0;
     if (g_srv->hasArg("type")) {
       String typeStr = g_srv->arg("type");
-      strncpy(displays[idx].type, typeStr.c_str(), sizeof(displays[idx].type) - 1);
-      displays[idx].type[sizeof(displays[idx].type) - 1] = '\0';
+      strncpy(speedPulses[idx].instrumentType, typeStr.c_str(), sizeof(speedPulses[idx].instrumentType) - 1);
+      speedPulses[idx].instrumentType[sizeof(speedPulses[idx].instrumentType) - 1] = '\0';
     }
     if (g_srv->hasArg("speedSource")) {
       int src = g_srv->arg("speedSource").toInt();
       if (src >= 0 && src <= 3) {
-        displays[idx].speedSource = (uint8_t)src;
+        speedPulses[idx].speedSource = (uint8_t)src;
       }
     }
-    if (g_srv->hasArg("sumlogK")) displays[idx].sumlogK = g_srv->arg("sumlogK").toFloat();
-    if (g_srv->hasArg("sumlogFmax")) displays[idx].sumlogFmax = g_srv->arg("sumlogFmax").toInt();
-    if (g_srv->hasArg("pulseDuty")) displays[idx].pulseDuty = g_srv->arg("pulseDuty").toInt();
-    if (g_srv->hasArg("pulsePin")) displays[idx].pulsePin = g_srv->arg("pulsePin").toInt();
+    if (g_srv->hasArg("sumlogK")) speedPulses[idx].pulsesPerKnot = g_srv->arg("sumlogK").toFloat();
+    if (g_srv->hasArg("sumlogFmax")) speedPulses[idx].maxFrequency = g_srv->arg("sumlogFmax").toInt();
+    if (g_srv->hasArg("pulseDuty")) speedPulses[idx].dutyCycle = g_srv->arg("pulseDuty").toInt();
+    if (g_srv->hasArg("pulsePin")) speedPulses[idx].pulsePin = g_srv->arg("pulsePin").toInt();
     
-    saveDisplayConfig(idx);
+    saveSpeedPulseConfig(idx);
     
     // Restart display with new settings
-    if (displays[idx].enabled) {
-      stopDisplay(idx);
-      startDisplay(idx);
-      updateDisplayPulse(idx);
+    if (speedPulses[idx].enabled) {
+      stopSpeedPulse(idx);
+      startSpeedPulse(idx);
+      updateSpeedPulse(idx);
     } else {
-      stopDisplay(idx);
+      stopSpeedPulse(idx);
     }
     
     g_srv->send(200, "text/plain", "OK");
@@ -116,15 +116,15 @@ static void handleGoto(){
     
     // Set global angle manually for testing
     xSemaphoreTake(dataMutex, portMAX_DELAY);
-    global_wind_angle = v;
+    directionAngle = v;
     xSemaphoreGive(dataMutex);
     
-    setOutputsDeg(v);
+    setDirectionOutput(v);
   }
   
   int currentAngle;
   xSemaphoreTake(dataMutex, portMAX_DELAY);
-  currentAngle = global_wind_angle;
+  currentAngle = directionAngle;
   xSemaphoreGive(dataMutex);
   
   g_srv->send(200,"text/plain",String("angle=")+currentAngle);
@@ -257,23 +257,23 @@ static void handleStatus(){
   // LITE Multi: Read global angle and display data
   int globalAngle;
   xSemaphoreTake(dataMutex, portMAX_DELAY);
-  globalAngle = global_wind_angle;
+  globalAngle = directionAngle;
   xSemaphoreGive(dataMutex);
   
   String j; j.reserve(600);
   j += "{";
   j += "\"globalAngle\":";  j += globalAngle;
-  j += ",\"globalDirSource\":"; j += global_direction_source;
+  j += ",\"globalDirSource\":"; j += directionSource;
   j += ",\"displays\":[";
   for (int i = 0; i < 3; i++) {
     if (i > 0) j += ",";
-    j += "{\"enabled\":"; j += (displays[i].enabled ? "true" : "false");
-    j += ",\"type\":\""; j += displays[i].type; j += "\"";
-    j += ",\"speedSource\":"; j += displays[i].speedSource;
-    j += ",\"sumlogK\":"; j += displays[i].sumlogK;
-    j += ",\"sumlogFmax\":"; j += displays[i].sumlogFmax;
-    j += ",\"pulseDuty\":"; j += displays[i].pulseDuty;
-    j += ",\"pulsePin\":"; j += displays[i].pulsePin;
+    j += "{\"enabled\":"; j += (speedPulses[i].enabled ? "true" : "false");
+    j += ",\"type\":\""; j += speedPulses[i].instrumentType; j += "\"";
+    j += ",\"speedSource\":"; j += speedPulses[i].speedSource;
+    j += ",\"sumlogK\":"; j += speedPulses[i].pulsesPerKnot;
+    j += ",\"sumlogFmax\":"; j += speedPulses[i].maxFrequency;
+    j += ",\"pulseDuty\":"; j += speedPulses[i].dutyCycle;
+    j += ",\"pulsePin\":"; j += speedPulses[i].pulsePin;
     j += "}";
   }
   j += "]";
@@ -404,12 +404,12 @@ static void handleDataFlow() {
     j += "}";
     
     // Display info (LITE Multi)
-    j += ",\"globalDirSource\":"; j += global_direction_source;
+    j += ",\"globalDirSource\":"; j += directionSource;
     j += ",\"displays\":[";
     for (int i = 0; i < 3; i++) {
       if (i > 0) j += ",";
-      j += "{\"enabled\":"; j += displays[i].enabled ? "true" : "false";
-      j += ",\"speedSource\":"; j += displays[i].speedSource;
+      j += "{\"enabled\":"; j += speedPulses[i].enabled ? "true" : "false";
+      j += ",\"speedSource\":"; j += speedPulses[i].speedSource;
       j += "}";
     }
     j += "]";

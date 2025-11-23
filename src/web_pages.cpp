@@ -234,7 +234,7 @@ String buildSinglePage() {
           <label>
             <input type="checkbox" id="enabled" )rawliteral";
   
-  if (display.enabled) html += "checked";
+  if (speedPulses[0].enabled) html += "checked";
   
   html += R"rawliteral(>
             Enable Display Output
@@ -246,12 +246,12 @@ String buildSinglePage() {
           <select id="type">
             <option value="sumlog" )rawliteral";
   
-  if (strcmp(display.type, "sumlog") == 0) html += "selected";
+  if (strcmp(speedPulses[0].instrumentType, "sumlog") == 0) html += "selected";
   
   html += R"rawliteral(>Sumlog (Speed only)</option>
             <option value="logicwind" )rawliteral";
   
-  if (strcmp(display.type, "logicwind") == 0) html += "selected";
+  if (strcmp(speedPulses[0].instrumentType, "logicwind") == 0) html += "selected";
   
   html += R"rawliteral(>Logic Wind (Speed + Direction)</option>
           </select>
@@ -260,25 +260,25 @@ String buildSinglePage() {
         
         <div class="form-group">
           <label for="dataType">Data Source</label>
-          <select id="dataType">
+          <select id="speedSource">
             <option value="0" )rawliteral";
   
-  if (display.dataType == DATA_APPARENT_WIND) html += "selected";
+  if (speedPulses[0].speedSource == DATA_APPARENT_WIND) html += "selected";
   
   html += R"rawliteral(>Apparent Wind (MWV-R, VWR)</option>
             <option value="1" )rawliteral";
   
-  if (display.dataType == DATA_TRUE_WIND) html += "selected";
+  if (speedPulses[0].speedSource == DATA_TRUE_WIND) html += "selected";
   
   html += R"rawliteral(>True Wind (MWV-T, VWT)</option>
             <option value="2" )rawliteral";
   
-  if (display.dataType == DATA_SOG) html += "selected";
+  if (speedPulses[0].speedSource == DATA_SOG) html += "selected";
   
   html += R"rawliteral(>Speed Over Ground (RMC, VTG)</option>
             <option value="3" )rawliteral";
   
-  if (display.dataType == DATA_COG) html += "selected";
+  if (speedPulses[0].speedSource == DATA_COG) html += "selected";
   
   html += R"rawliteral(>Course Over Ground (RMC, VTG)</option>
           </select>
@@ -289,53 +289,43 @@ String buildSinglePage() {
           <label for="pulsePin">Pulse Output Pin (GPIO)</label>
           <input type="number" id="pulsePin" value=")rawliteral";
   
-  html += String(display.pulsePin);
+  html += String(speedPulses[0].pulsePin);
   
   html += R"rawliteral(" min="0" max="39">
           <p class="info-text">GPIO pin for pulse output (default: 12)</p>
         </div>
         
         <div class="form-group">
-          <label for="sumlogK">Pulses per Knot</label>
-          <input type="number" id="sumlogK" value=")rawliteral";
+          <label for="pulsesPerKnot">Pulses per Knot</label>
+          <input type="number" id="pulsesPerKnot" value=")rawliteral";
   
-  html += String(display.sumlogK, 1);
+  html += String(speedPulses[0].pulsesPerKnot, 1);
   
   html += R"rawliteral(" step="0.1" min="0.1" max="100">
           <p class="info-text">Calibration factor (default: 1.0)</p>
         </div>
         
         <div class="form-group">
-          <label for="sumlogFmax">Maximum Frequency (Hz)</label>
-          <input type="number" id="sumlogFmax" value=")rawliteral";
+          <label for="maxFrequency">Maximum Frequency (Hz)</label>
+          <input type="number" id="maxFrequency" value=")rawliteral";
   
-  html += String(display.sumlogFmax);
+  html += String(speedPulses[0].maxFrequency);
   
   html += R"rawliteral(" min="10" max="1000">
           <p class="info-text">Frequency limit (default: 150 Hz)</p>
         </div>
         
         <div class="form-group">
-          <label for="pulseDuty">Pulse Duty Cycle (%)</label>
-          <input type="number" id="pulseDuty" value=")rawliteral";
+          <label for="dutyCycle">Pulse Duty Cycle (%)</label>
+          <input type="number" id="dutyCycle" value=")rawliteral";
   
-  html += String(display.pulseDuty);
+  html += String(speedPulses[0].dutyCycle);
   
   html += R"rawliteral(" min="1" max="99">
           <p class="info-text">Pulse width percentage (default: 10%)</p>
         </div>
         
-        <div class="form-group">
-          <label for="offsetDeg">Direction Offset (degrees)</label>
-          <input type="number" id="offsetDeg" value=")rawliteral";
-  
-  html += String(display.offsetDeg);
-  
-  html += R"rawliteral(" min="-180" max="180">
-          <p class="info-text">Calibration offset for Logic Wind direction</p>
-        </div>
-        
-        <button type="submit">💾 Save Display Settings</button>
+        <button type="submit">💾 Save Speed Pulse Settings</button>
       </form>
     </div>
 
@@ -409,12 +399,11 @@ String buildSinglePage() {
         num: '1',
         enabled: document.getElementById('enabled').checked ? '1' : '0',
         type: document.getElementById('type').value,
-        dataType: document.getElementById('dataType').value,  // LITE Plus: selectable
+        speedSource: document.getElementById('speedSource').value,
         pulsePin: document.getElementById('pulsePin').value,
-        sumlogK: document.getElementById('sumlogK').value,
-        sumlogFmax: document.getElementById('sumlogFmax').value,
-        pulseDuty: document.getElementById('pulseDuty').value,
-        offsetDeg: document.getElementById('offsetDeg').value
+        pulsesPerKnot: document.getElementById('pulsesPerKnot').value,
+        maxFrequency: document.getElementById('maxFrequency').value,
+        dutyCycle: document.getElementById('dutyCycle').value
       });
       
       try {
@@ -465,10 +454,10 @@ String buildSinglePage() {
         .then(data => {
           if (!data.display) return;
           
-          // Select data source based on display.dataType
+          // Select data source based on speedPulses[0].speedSource
           let sourceData;
           let sourceName = '';
-          switch(data.display.dataType) {
+          switch(data.speedPulses[0].speedSource) {
             case 0: // Apparent Wind
               sourceData = data.apparent;
               sourceName = 'Apparent Wind';
