@@ -5,14 +5,14 @@
 
 /* ========= Display Controller Module ========= */
 // Handles pulse generation and DAC output for wind displays
+// LITE: Single display only
 
 // Start/stop display output
-void startDisplay(int displayNum);
-void stopDisplay(int displayNum);
+void startDisplay();
+void stopDisplay();
 
 // Update display pulse output
-void updateDisplayPulse(int displayNum);
-void updateAllDisplayPulses();
+void updateDisplayPulse();
 
 // Set DAC output for direction (Logic Wind only)
 void setOutputsDeg(int degrees);

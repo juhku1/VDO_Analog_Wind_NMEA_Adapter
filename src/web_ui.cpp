@@ -9,41 +9,16 @@
 // Yleinen osoitin WebServeriin
 static WebServer* g_srv = nullptr;
 
-// ---------- Page handlers (now using web_pages.cpp) ----------
+// ---------- Page handlers (LITE: single page) ----------
 
-// Page handlers
 static void handleHome() {
-  g_srv->send(200, "text/html", buildStatusPage());
-}
-
-static void handleDisplay1() {
-  g_srv->send(200, "text/html", buildDisplayPage(1));
-}
-
-static void handleDisplay2() {
-  g_srv->send(200, "text/html", buildDisplayPage(2));
-}
-
-static void handleDisplay3() {
-  g_srv->send(200, "text/html", buildDisplayPage(3));
+  g_srv->send(200, "text/html", buildSinglePage());
 }
 
 // ---------- HTTP-käsittelijät ----------
 
-// API: Unified display endpoint
+// LITE: Simplified display API for single display
 static void handleDisplayAPI() {
-  if (!g_srv->hasArg("num")) {
-    g_srv->send(400, "text/plain", "Missing num parameter");
-    return;
-  }
-  
-  int displayNum = g_srv->arg("num").toInt();
-  if (displayNum < 1 || displayNum > 3) {
-    g_srv->send(400, "text/plain", "Invalid display number");
-    return;
-  }
-  
-  int arrayIndex = displayNum - 1; // Convert to 0-based array index
   String action = g_srv->arg("action");
   
   if (g_srv->method() == HTTP_GET) {
@@ -51,68 +26,58 @@ static void handleDisplayAPI() {
       // Set enabled state
       if (g_srv->hasArg("val")) {
         bool newEnabled = g_srv->arg("val").toInt() != 0;
-        displays[arrayIndex].enabled = newEnabled;
-        saveDisplayConfig(arrayIndex);
+        display.enabled = newEnabled;
+        saveDisplayConfig();
         
         if (newEnabled) {
-          startDisplay(arrayIndex);
+          startDisplay();
         } else {
-          stopDisplay(arrayIndex);
+          stopDisplay();
         }
       }
-      g_srv->send(200, "text/plain", String("enabled=") + (displays[arrayIndex].enabled ? "1" : "0"));
+      g_srv->send(200, "text/plain", String("enabled=") + (display.enabled ? "1" : "0"));
     } else {
       // Return display configuration as JSON
       String json = "{";
-      json += "\"enabled\":" + String(displays[arrayIndex].enabled ? "true" : "false");
-      json += ",\"type\":\"" + String(displays[arrayIndex].type) + "\"";
-      json += ",\"dataType\":" + String(displays[arrayIndex].dataType);
-      json += ",\"sentence\":\"" + String(displays[arrayIndex].sentence) + "\"";
-      json += ",\"offsetDeg\":" + String(displays[arrayIndex].offsetDeg);
-      json += ",\"sumlogK\":" + String(displays[arrayIndex].sumlogK);
-      json += ",\"sumlogFmax\":" + String(displays[arrayIndex].sumlogFmax);
-      json += ",\"pulseDuty\":" + String(displays[arrayIndex].pulseDuty);
-      json += ",\"pulsePin\":" + String(displays[arrayIndex].pulsePin);
-      json += ",\"gotoAngle\":" + String(displays[arrayIndex].gotoAngle);
+      json += "\"enabled\":" + String(display.enabled ? "true" : "false");
+      json += ",\"type\":\"" + String(display.type) + "\"";
+      json += ",\"dataType\":" + String(display.dataType);
+      json += ",\"offsetDeg\":" + String(display.offsetDeg);
+      json += ",\"sumlogK\":" + String(display.sumlogK);
+      json += ",\"sumlogFmax\":" + String(display.sumlogFmax);
+      json += ",\"pulseDuty\":" + String(display.pulseDuty);
+      json += ",\"pulsePin\":" + String(display.pulsePin);
+      json += ",\"gotoAngle\":" + String(display.gotoAngle);
       json += "}";
       g_srv->send(200, "application/json", json);
     }
   } else if (g_srv->method() == HTTP_POST && action == "save") {
     // Save all display settings
-    if (g_srv->hasArg("enabled")) displays[arrayIndex].enabled = g_srv->arg("enabled").toInt() != 0;
+    if (g_srv->hasArg("enabled")) display.enabled = g_srv->arg("enabled").toInt() != 0;
     if (g_srv->hasArg("type")) {
       String typeStr = g_srv->arg("type");
-      strncpy(displays[arrayIndex].type, typeStr.c_str(), sizeof(displays[arrayIndex].type) - 1);
-      displays[arrayIndex].type[sizeof(displays[arrayIndex].type) - 1] = '\0';
+      strncpy(display.type, typeStr.c_str(), sizeof(display.type) - 1);
+      display.type[sizeof(display.type) - 1] = '\0';
     }
     if (g_srv->hasArg("dataType")) {
-      int dt = g_srv->arg("dataType").toInt();
-      if (dt >= 0 && dt <= 3) {
-        displays[arrayIndex].dataType = (uint8_t)dt;
-      }
+      display.dataType = DATA_APPARENT_WIND;  // LITE: Always Apparent Wind
     }
-    // Backward compatibility: sentence parameter (deprecated)
-    if (g_srv->hasArg("sentence")) {
-      String sentStr = g_srv->arg("sentence");
-      strncpy(displays[arrayIndex].sentence, sentStr.c_str(), sizeof(displays[arrayIndex].sentence) - 1);
-      displays[arrayIndex].sentence[sizeof(displays[arrayIndex].sentence) - 1] = '\0';
-    }
-    if (g_srv->hasArg("offsetDeg")) displays[arrayIndex].offsetDeg = g_srv->arg("offsetDeg").toInt();
-    if (g_srv->hasArg("sumlogK")) displays[arrayIndex].sumlogK = g_srv->arg("sumlogK").toFloat();
-    if (g_srv->hasArg("sumlogFmax")) displays[arrayIndex].sumlogFmax = g_srv->arg("sumlogFmax").toInt();
-    if (g_srv->hasArg("pulseDuty")) displays[arrayIndex].pulseDuty = g_srv->arg("pulseDuty").toInt();
-    if (g_srv->hasArg("pulsePin")) displays[arrayIndex].pulsePin = g_srv->arg("pulsePin").toInt();
-    if (g_srv->hasArg("gotoAngle")) displays[arrayIndex].gotoAngle = g_srv->arg("gotoAngle").toInt();
+    if (g_srv->hasArg("offsetDeg")) display.offsetDeg = g_srv->arg("offsetDeg").toInt();
+    if (g_srv->hasArg("sumlogK")) display.sumlogK = g_srv->arg("sumlogK").toFloat();
+    if (g_srv->hasArg("sumlogFmax")) display.sumlogFmax = g_srv->arg("sumlogFmax").toInt();
+    if (g_srv->hasArg("pulseDuty")) display.pulseDuty = g_srv->arg("pulseDuty").toInt();
+    if (g_srv->hasArg("pulsePin")) display.pulsePin = g_srv->arg("pulsePin").toInt();
+    if (g_srv->hasArg("gotoAngle")) display.gotoAngle = g_srv->arg("gotoAngle").toInt();
     
-    saveDisplayConfig(arrayIndex);
+    saveDisplayConfig();
     
-    // Restart display with new settings and update pulses
-    if (displays[arrayIndex].enabled) {
-      stopDisplay(arrayIndex);
-      startDisplay(arrayIndex);
-      updateDisplayPulse(arrayIndex);
+    // Restart display with new settings
+    if (display.enabled) {
+      stopDisplay();
+      startDisplay();
+      updateDisplayPulse();
     } else {
-      stopDisplay(arrayIndex);
+      stopDisplay();
     }
     
     g_srv->send(200, "text/plain", "OK");
@@ -144,13 +109,14 @@ static void handlePulseDuty(){
 static void handlePulseDuty2(){
   g_srv->send(200, "text/plain", "Legacy handler - use /api/display?display=1&pulseDuty=X");
 }
+// LITE: Simplified trim and goto handlers
 static void handleTrim(){
   if (g_srv->hasArg("offset")){
     int v = g_srv->arg("offset").toInt();
     if (v<-180) v=-180; if (v>180) v=180;
     offsetDeg = v;
     prefs.putInt("offset", offsetDeg);
-    setOutputsDeg(0, 0); // Update DAC with Display 0 data
+    setOutputsDeg(0);
   }
   g_srv->send(200, "text/plain", String("offset=")+offsetDeg);
 }
@@ -159,17 +125,17 @@ static void handleGoto(){
     int v = g_srv->arg("deg").toInt();
     if (v<0) v=0; if (v>359) v=359;
     
-    // Set Display 0 angle manually for testing
+    // Set display angle manually for testing
     xSemaphoreTake(dataMutex, portMAX_DELAY);
-    displays[0].windAngle_deg = v;
+    display.windAngle_deg = v;
     xSemaphoreGive(dataMutex);
     
-    setOutputsDeg(0, 0); // Update DAC with Display 0 data
+    setOutputsDeg(0);
   }
   
   int currentAngle;
   xSemaphoreTake(dataMutex, portMAX_DELAY);
-  currentAngle = displays[0].windAngle_deg;
+  currentAngle = display.windAngle_deg;
   xSemaphoreGive(dataMutex);
   
   g_srv->send(200,"text/plain",String("angle=")+currentAngle);
@@ -299,37 +265,31 @@ static void handleStatus(){
   // Get AP client count
   uint8_t apClientCount = WiFi.softAPgetStationNum();
   
-  // Read Display 0 data for status (primary display)
-  float display0_speed;
-  int display0_angle;
+  // LITE: Read single display data for status
+  float display_speed;
+  int display_angle;
   xSemaphoreTake(dataMutex, portMAX_DELAY);
-  display0_speed = displays[0].windSpeed_kn;
-  display0_angle = displays[0].windAngle_deg;
+  display_speed = display.windSpeed_kn;
+  display_angle = display.windAngle_deg;
   xSemaphoreGive(dataMutex);
   
-  String j; j.reserve(600);
+  String j; j.reserve(400);
   j += "{";
-  j += "\"angle\":";      j += display0_angle;
+  j += "\"angle\":";      j += display_angle;
   j += ",\"offset\":";      j += offsetDeg;
-  j += ",\"speed_kn\":";    j += display0_speed;
-  j += ",\"displays\":[";
-  for (int i = 0; i < 3; i++) {
-    if (i > 0) j += ",";
-    j += "{\"enabled\":"; j += (displays[i].enabled ? "true" : "false");
-    j += ",\"type\":\""; j += displays[i].type; j += "\"";
-    j += ",\"sumlogK\":"; j += displays[i].sumlogK;
-    j += ",\"sumlogFmax\":"; j += displays[i].sumlogFmax;
-    j += ",\"pulseDuty\":"; j += displays[i].pulseDuty;
-    j += ",\"pulsePin\":"; j += displays[i].pulsePin;
-    j += "}";
-  }
-  j += "]";
+  j += ",\"speed_kn\":";    j += display_speed;
+  j += ",\"display\":{";
+  j += "\"enabled\":"; j += (display.enabled ? "true" : "false");
+  j += ",\"type\":\""; j += display.type; j += "\"";
+  j += ",\"sumlogK\":"; j += display.sumlogK;
+  j += ",\"sumlogFmax\":"; j += display.sumlogFmax;
+  j += ",\"pulseDuty\":"; j += display.pulseDuty;
+  j += ",\"pulsePin\":"; j += display.pulsePin;
+  j += "}";
   j += ",\"src\":\"";      j += lastSentenceType; j += "\"";
   j += ",\"raw\":\"";      j += rawEsc;  j += "\"";
   j += ",\"has_mwv_r\":"; j += (hasMwvR ? "true" : "false");
-  j += ",\"has_mwv_t\":"; j += (hasMwvT ? "true" : "false");
   j += ",\"has_vwr\":"; j += (hasVwr ? "true" : "false");
-  j += ",\"has_vwt\":"; j += (hasVwt ? "true" : "false");
   j += ",\"port\":";      j += nmeaPort;
   j += ",\"proto\":\"";      
   j += (nmeaProto==PROTO_TCP?"TCP":nmeaProto==PROTO_HTTP?"HTTP":"UDP"); 
@@ -408,26 +368,10 @@ static void handleStatus(){
   g_srv->send(200, "application/json", j);
 }
 
-// Helper: Check which displays use this data type
-static String getDisplaysUsingJSON(uint8_t dataType) {
-  String result = "[";
-  int count = 0;
-  
-  for (int i = 0; i < 3; i++) {
-    if (displays[i].enabled && displays[i].dataType == dataType) {
-      if (count > 0) result += ",";
-      result += String(i + 1);
-      count++;
-    }
-  }
-  result += "]";
-  return result;
-}
-
-// API: Data flow overview
+// LITE: Simplified data flow API (Apparent Wind only)
 static void handleDataFlow() {
   String j;
-  j.reserve(800);
+  j.reserve(200);
   
   if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
     uint32_t now = millis();
@@ -438,41 +382,8 @@ static void handleDataFlow() {
     j += ",\"angle\":"; j += apparent_hasData ? String((int)apparent_angle_deg) : "0";
     j += ",\"source\":\""; j += apparent_source; j += "\"";
     j += ",\"age\":"; j += apparent_hasData ? String(now - apparent_lastUpdate_ms) : "999999";
-    j += ",\"displays\":"; j += getDisplaysUsingJSON(DATA_APPARENT_WIND);
+    j += ",\"enabled\":"; j += display.enabled ? "true" : "false";
     j += "}";
-    
-    j += ",\"true\":{";
-    j += "\"speed\":"; j += true_hasData ? String(true_speed_kn, 1) : "0";
-    j += ",\"angle\":"; j += true_hasData ? String((int)true_angle_deg) : "0";
-    j += ",\"source\":\""; j += true_source; j += "\"";
-    j += ",\"age\":"; j += true_hasData ? String(now - true_lastUpdate_ms) : "999999";
-    j += ",\"displays\":"; j += getDisplaysUsingJSON(DATA_TRUE_WIND);
-    j += "}";
-    
-    j += ",\"vmg\":{";
-    j += "\"speed\":"; j += vmg_hasData ? String(vmg_kn, 1) : "0";
-    j += ",\"angle\":0";
-    j += ",\"source\":\"Calculated\"";
-    j += ",\"age\":"; j += vmg_hasData ? String(now - vmg_lastUpdate_ms) : "999999";
-    j += ",\"displays\":"; j += getDisplaysUsingJSON(DATA_VMG);
-    j += "}";
-    
-    j += ",\"sog\":{";
-    j += "\"speed\":"; j += gps_hasSOG ? String(gps_sog_kn, 1) : "0";
-    j += ",\"angle\":0";
-    j += ",\"source\":\"GPS (RMC/VTG)\"";
-    j += ",\"age\":"; j += gps_hasSOG ? String(now - gps_lastUpdate_ms) : "999999";
-    j += ",\"displays\":"; j += getDisplaysUsingJSON(DATA_SOG);
-    j += "}";
-    
-    j += ",\"cog\":{";
-    j += "\"speed\":0";
-    j += ",\"angle\":"; j += gps_hasCOG ? String((int)gps_cog_deg) : "0";
-    j += ",\"source\":\"GPS (RMC/VTG)\"";
-    j += ",\"age\":"; j += gps_hasCOG ? String(now - gps_lastUpdate_ms) : "999999";
-    j += ",\"displays\":"; j += getDisplaysUsingJSON(DATA_COG);
-    j += "}";
-    
     j += "}";
     
     xSemaphoreGive(dataMutex);
@@ -486,62 +397,18 @@ static void handleDataFlow() {
 void setupWebUI(WebServer& server){
   g_srv = &server;
   
-  // Multi-page handlers
+  // LITE: Single-page handler
   server.on("/",            HTTP_GET,  handleHome);
-  server.on("/display1",    HTTP_GET,  handleDisplay1);
-  server.on("/display2",    HTTP_GET,  handleDisplay2);
-  server.on("/display3",    HTTP_GET,  handleDisplay3);
   
-  // Unified display API
+  // Display API
   server.on("/api/display", HTTP_GET,  handleDisplayAPI);
   server.on("/api/display", HTTP_POST, handleDisplayAPI);
   
-  // Legacy endpoints (keep for backward compatibility)
+  // Configuration endpoints
   server.on("/trim",        HTTP_GET,  handleTrim);
   server.on("/goto",        HTTP_GET,  handleGoto);
-  server.on("/sumlogk",     HTTP_GET,  handleSumlogK);
-  server.on("/sumlogk2",    HTTP_GET,  handleSumlogK2);
-  server.on("/sumlogfmax",  HTTP_GET,  handleSumlogFmax);
-  server.on("/sumlogfmax2", HTTP_GET,  handleSumlogFmax2);
-  server.on("/pulseduty",   HTTP_GET,  handlePulseDuty);
-  server.on("/pulseduty2",  HTTP_GET,  handlePulseDuty2);
-  server.on("/pulsepin",    HTTP_GET,  handlePulsePin1);
-  server.on("/pulsepin2",   HTTP_GET,  handlePulsePin2);
   server.on("/savecfg",     HTTP_POST, handleSaveCfg);
   server.on("/reconnect",   HTTP_GET,  handleReconnect);
-  server.on("/reconnecttcp",HTTP_GET,  handleReconnectTCP);
   server.on("/status",      HTTP_GET,  handleStatus);
   server.on("/api/dataflow", HTTP_GET,  handleDataFlow);
-  
-  // Legacy display2 endpoints
-  server.on("/display2enabled", HTTP_GET, [](void){
-    if (g_srv->hasArg("val")) {
-      int v = g_srv->arg("val").toInt();
-      bool newEnabled = (v != 0);
-      
-      if (newEnabled != displays[1].enabled) {
-        displays[1].enabled = newEnabled;
-        saveDisplayConfig(1);
-        
-        if (newEnabled) {
-          startDisplay(1); // Start unified display 1
-        } else {
-          stopDisplay(1);  // Stop unified display 1
-        }
-      }
-    }
-    g_srv->send(200, "text/plain", String("display2_enabled=") + (displays[1].enabled ? "1" : "0"));
-  });
-  server.on("/display2type", HTTP_GET, [](void){
-    if (g_srv->hasArg("val")) {
-      String type = g_srv->arg("val");
-      if (type == "logicwind" || type == "sumlog") {
-        strncpy(displays[1].type, type.c_str(), sizeof(displays[1].type) - 1);
-        displays[1].type[sizeof(displays[1].type) - 1] = '\0';
-        saveDisplayConfig(1);
-        updateDisplayPulse(1); // Update pulse settings
-      }
-    }
-    g_srv->send(200, "text/plain", String("display2_type=") + displays[1].type);
-  });
 }

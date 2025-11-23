@@ -6,8 +6,9 @@
 #include "DFRobot_GP8403.h"
 #include "web_ui.h"
 #include "nmea_parser.h"
-#include "wind_calculations.h"
 #include "display_controller.h"
+
+// LITE: wind_calculations.h removed
 
 // LEDC for hardware PWM pulse generation
 #define LEDC_TIMER_RESOLUTION    10
@@ -40,14 +41,14 @@ SemaphoreHandle_t pauseAckSemaphore = NULL;  // For Core 1 pause acknowledgment
 
 Preferences prefs;
 
-// Unified display array (3 displays)
-DisplayConfig displays[3];
+// LITE: Single display only
+DisplayConfig display;
 
-// LEDC channels for each display (0-2) with separate timers
-const uint8_t LEDC_CHANNELS[3] = {0, 1, 2};
-const uint8_t LEDC_TIMERS[3] = {0, 1, 2};
-bool ledcActive[3] = {false, false, false};
-uint32_t lastFreq[3] = {0, 0, 0};
+// LEDC channel for single display
+const uint8_t LEDC_CHANNEL = 0;
+const uint8_t LEDC_TIMER = 0;
+bool ledcActive = false;
+uint32_t lastFreq = 0;
 
 // Wind data - protected by dataMutex
 float sumlog_speed_kn = 0.0;
@@ -56,33 +57,14 @@ int lastAngleSent = 0;
 char lastSentenceType[32] = "-";
 char lastSentenceRaw[256] = "-";
 
-// GPS data - protected by dataMutex
-float gps_sog_kn = 0.0;        // Speed Over Ground (knots)
-float gps_cog_deg = 0.0;       // Course Over Ground (degrees)
-float gps_heading_deg = 0.0;   // True Heading (degrees)
-bool gps_hasSOG = false;
-bool gps_hasCOG = false;
-bool gps_hasHeading = false;
-uint32_t gps_lastUpdate_ms = 0;
+// LITE: GPS data removed
 
-// Apparent Wind data for calculation - protected by dataMutex
+// LITE: Apparent Wind data only - protected by dataMutex
 float apparent_speed_kn = 0.0;
 float apparent_angle_deg = 0.0;
 bool apparent_hasData = false;
 uint32_t apparent_lastUpdate_ms = 0;
 char apparent_source[16] = "-";  // "MWV(R)", "VWR", etc.
-
-// True Wind data - protected by dataMutex
-float true_speed_kn = 0.0;
-float true_angle_deg = 0.0;
-bool true_hasData = false;
-uint32_t true_lastUpdate_ms = 0;
-char true_source[16] = "-";  // "MWV(T)", "VWT", "Calculated"
-
-// VMG data - protected by dataMutex
-float vmg_kn = 0.0;
-bool vmg_hasData = false;
-uint32_t vmg_lastUpdate_ms = 0;
 
 #define AP_SSID           "VDO-Cal"
 #define AP_PASS           "wind12345"
@@ -123,11 +105,9 @@ int offsetDeg = 0;
 char connProfileName[64] = "Yachta";
 bool freezeNMEA = false;
 
-// NMEA sentence type tracking (5s window)
+// NMEA sentence type tracking (5s window) - LITE: Apparent Wind only
 bool hasMwvR = false;
-bool hasMwvT = false;
 bool hasVwr = false;
-bool hasVwt = false;
 uint32_t lastFlagReset = 0;
 
 char sta_ssid[33] = {0};
@@ -180,61 +160,20 @@ void nmeaPollTaskFunc(void *pvParameters) {
 }
 
 /* ========= Asetusten tallennus ========= */
-void saveDisplayConfig(int displayNum = -1) {
+void saveDisplayConfig() {
   xSemaphoreTake(nvsMutex, portMAX_DELAY);
   prefs.begin(NVS_NAMESPACE, false);
   
-  if (displayNum == -1) {
-    // Save all displays
-    for (int i = 0; i < 3; i++) {
-      char prefix[8];
-      snprintf(prefix, sizeof(prefix), "d%d_", i);
-      char key[16];
-      
-      snprintf(key, sizeof(key), "%senabled", prefix);
-      prefs.putBool(key, displays[i].enabled);
-      snprintf(key, sizeof(key), "%stype", prefix);
-      prefs.putString(key, displays[i].type);
-      snprintf(key, sizeof(key), "%sdataType", prefix);
-      prefs.putUChar(key, displays[i].dataType);
-      snprintf(key, sizeof(key), "%soffset", prefix);
-      prefs.putInt(key, displays[i].offsetDeg);
-      snprintf(key, sizeof(key), "%ssumlogK", prefix);
-      prefs.putFloat(key, displays[i].sumlogK);
-      snprintf(key, sizeof(key), "%ssumlogFmax", prefix);
-      prefs.putInt(key, displays[i].sumlogFmax);
-      snprintf(key, sizeof(key), "%spulseDuty", prefix);
-      prefs.putInt(key, displays[i].pulseDuty);
-      snprintf(key, sizeof(key), "%spulsePin", prefix);
-      prefs.putInt(key, displays[i].pulsePin);
-      snprintf(key, sizeof(key), "%sgotoAngle", prefix);
-      prefs.putInt(key, displays[i].gotoAngle);
-    }
-  } else if (displayNum >= 0 && displayNum < 3) {
-    // Save single display
-    char prefix[8];
-    snprintf(prefix, sizeof(prefix), "d%d_", displayNum);
-    char key[16];
-    
-    snprintf(key, sizeof(key), "%senabled", prefix);
-    prefs.putBool(key, displays[displayNum].enabled);
-    snprintf(key, sizeof(key), "%stype", prefix);
-    prefs.putString(key, displays[displayNum].type);
-    snprintf(key, sizeof(key), "%sdataType", prefix);
-    prefs.putUChar(key, displays[displayNum].dataType);
-    snprintf(key, sizeof(key), "%soffset", prefix);
-    prefs.putInt(key, displays[displayNum].offsetDeg);
-    snprintf(key, sizeof(key), "%ssumlogK", prefix);
-    prefs.putFloat(key, displays[displayNum].sumlogK);
-    snprintf(key, sizeof(key), "%ssumlogFmax", prefix);
-    prefs.putInt(key, displays[displayNum].sumlogFmax);
-    snprintf(key, sizeof(key), "%spulseDuty", prefix);
-    prefs.putInt(key, displays[displayNum].pulseDuty);
-    snprintf(key, sizeof(key), "%spulsePin", prefix);
-    prefs.putInt(key, displays[displayNum].pulsePin);
-    snprintf(key, sizeof(key), "%sgotoAngle", prefix);
-    prefs.putInt(key, displays[displayNum].gotoAngle);
-  }
+  // LITE: Save single display (always d0_)
+  prefs.putBool("d0_enabled", display.enabled);
+  prefs.putString("d0_type", display.type);
+  prefs.putUChar("d0_dataType", display.dataType);
+  prefs.putInt("d0_offset", display.offsetDeg);
+  prefs.putFloat("d0_sumlogK", display.sumlogK);
+  prefs.putInt("d0_sumlogFmax", display.sumlogFmax);
+  prefs.putInt("d0_pulseDuty", display.pulseDuty);
+  prefs.putInt("d0_pulsePin", display.pulsePin);
+  prefs.putInt("d0_gotoAngle", display.gotoAngle);
   
   prefs.end();
   xSemaphoreGive(nvsMutex);
@@ -243,58 +182,35 @@ void saveDisplayConfig(int displayNum = -1) {
 void loadConfig(){
   prefs.begin(NVS_NAMESPACE, false);
   
-  // Initialize displays with defaults
-  for (int i = 0; i < 3; i++) {
-    char prefix[8];
-    snprintf(prefix, sizeof(prefix), "d%d_", i);
-    char key[16];
-    
-    snprintf(key, sizeof(key), "%senabled", prefix);
-    displays[i].enabled = prefs.getBool(key, i == 0);
-    
-    snprintf(key, sizeof(key), "%stype", prefix);
-    String typeStr = prefs.getString(key, "sumlog");
-    strncpy(displays[i].type, typeStr.c_str(), sizeof(displays[i].type) - 1);
-    displays[i].type[sizeof(displays[i].type) - 1] = '\0';
-    
-    // Load dataType (new) or migrate from sentence (old)
-    snprintf(key, sizeof(key), "%sdataType", prefix);
-    if (prefs.isKey(key)) {
-      // New format: dataType exists
-      displays[i].dataType = prefs.getUChar(key, DATA_APPARENT_WIND);
-    } else {
-      // Old format: migrate from sentence
-      snprintf(key, sizeof(key), "%ssentence", prefix);
-      String sentStr = prefs.getString(key, "MWV");
-      // Migrate: MWV -> Apparent Wind (default), keep for compatibility
-      displays[i].dataType = DATA_APPARENT_WIND;
-      strncpy(displays[i].sentence, sentStr.c_str(), sizeof(displays[i].sentence) - 1);
-      displays[i].sentence[sizeof(displays[i].sentence) - 1] = '\0';
-    }
-    
-    snprintf(key, sizeof(key), "%soffset", prefix);
-    displays[i].offsetDeg = prefs.getInt(key, 0);
-    
-    snprintf(key, sizeof(key), "%ssumlogK", prefix);
-    displays[i].sumlogK = prefs.getFloat(key, 1.0f);
-    
-    snprintf(key, sizeof(key), "%ssumlogFmax", prefix);
-    displays[i].sumlogFmax = prefs.getInt(key, 150);
-    
-    snprintf(key, sizeof(key), "%spulseDuty", prefix);
-    displays[i].pulseDuty = prefs.getInt(key, 10);
-    
-    snprintf(key, sizeof(key), "%spulsePin", prefix);
-    displays[i].pulsePin = prefs.getInt(key, 12 + i * 2);
-    
-    snprintf(key, sizeof(key), "%sgotoAngle", prefix);
-    displays[i].gotoAngle = prefs.getInt(key, 0);
-    
-    // Initialize per-display wind data
-    displays[i].windSpeed_kn = 0.0f;
-    displays[i].windAngle_deg = 0;
-    displays[i].lastUpdate_ms = 0;
+  // LITE: Initialize single display (always d0_)
+  display.enabled = prefs.getBool("d0_enabled", true);
+  
+  String typeStr = prefs.getString("d0_type", "sumlog");
+  strncpy(display.type, typeStr.c_str(), sizeof(display.type) - 1);
+  display.type[sizeof(display.type) - 1] = '\0';
+  
+  // Load dataType (new) or migrate from sentence (old)
+  if (prefs.isKey("d0_dataType")) {
+    display.dataType = prefs.getUChar("d0_dataType", DATA_APPARENT_WIND);
+  } else {
+    // Old format: migrate from sentence
+    String sentStr = prefs.getString("d0_sentence", "MWV");
+    display.dataType = DATA_APPARENT_WIND;
+    strncpy(display.sentence, sentStr.c_str(), sizeof(display.sentence) - 1);
+    display.sentence[sizeof(display.sentence) - 1] = '\0';
   }
+  
+  display.offsetDeg = prefs.getInt("d0_offset", 0);
+  display.sumlogK = prefs.getFloat("d0_sumlogK", 1.0f);
+  display.sumlogFmax = prefs.getInt("d0_sumlogFmax", 150);
+  display.pulseDuty = prefs.getInt("d0_pulseDuty", 10);
+  display.pulsePin = prefs.getInt("d0_pulsePin", 12);
+  display.gotoAngle = prefs.getInt("d0_gotoAngle", 0);
+  
+  // Initialize display wind data
+  display.windSpeed_kn = 0.0f;
+  display.windAngle_deg = 0;
+  display.lastUpdate_ms = 0;
   
   offsetDeg = prefs.getInt("offset", 0);
   
@@ -414,12 +330,10 @@ void ensureTCPConnected(WiFiClient& client){
 void pollTCP(WiFiClient& client){
   if(!client.connected()) return;
 
-  // Reset sentence flags every 5 seconds
+  // Reset sentence flags every 5 seconds (LITE: Apparent Wind only)
   if(millis() - lastFlagReset > 5000) {
     hasMwvR = false;
-    hasMwvT = false;
     hasVwr = false;
-    hasVwt = false;
     lastFlagReset = millis();
   }
 
@@ -445,11 +359,9 @@ void pollTCP(WiFiClient& client){
             xSemaphoreGive(dataMutex);
             lastNmeaDataMs = millis();
             if(parseNMEALine(nmeaLineBuf)) {
-              // Update DAC for all displays that have Logic Wind type
-              for (int i = 0; i < 3; i++) {
-                if (displays[i].enabled && strcmp(displays[i].type, "logicwind") == 0) {
-                  setOutputsDeg(i, 0); // deg parameter not used anymore
-                }
+              // LITE: Update DAC if Logic Wind type
+              if (display.enabled && strcmp(display.type, "logicwind") == 0) {
+                setOutputsDeg(0);
               }
             }
             nmeaLineBufLen = 0;
@@ -496,12 +408,10 @@ void ensureUDPBound() {
 void pollUDP() {
   if (!udpConnected) return;
   
-  // Reset sentence flags every 5 seconds (same as TCP)
+  // Reset sentence flags every 5 seconds (LITE: Apparent Wind only)
   if (millis() - lastFlagReset > 5000) {
     hasMwvR = false;
-    hasMwvT = false;
     hasVwr = false;
-    hasVwt = false;
     lastFlagReset = millis();
   }
   
@@ -529,11 +439,9 @@ void pollUDP() {
             
             lastNmeaDataMs = millis();
             if (parseNMEALine(nmeaLineBuf)) {
-              // Update DAC for all displays that have Logic Wind type
-              for (int i = 0; i < 3; i++) {
-                if (displays[i].enabled && strcmp(displays[i].type, "logicwind") == 0) {
-                  setOutputsDeg(i, 0); // deg parameter not used anymore
-                }
+              // LITE: Update DAC if Logic Wind type
+              if (display.enabled && strcmp(display.type, "logicwind") == 0) {
+                setOutputsDeg(0);
               }
             }
             nmeaLineBufLen = 0;
@@ -627,15 +535,13 @@ void setup() {
   }
   
   if (dacReady) {
-    // Initialize DAC to 0 degrees for display 0
-    setOutputsDeg(0, 0);
+    // LITE: Initialize DAC to 0 degrees
+    setOutputsDeg(0);
   }
 
-  // Initialize enabled displays
-  for (int i = 0; i < 3; i++) {
-    if (displays[i].enabled) {
-      startDisplay(i);
-    }
+  // LITE: Initialize single display
+  if (display.enabled) {
+    startDisplay();
   }
 
   // Käynnistä STA after AP and DAC
@@ -684,7 +590,7 @@ void loop() {
   // Check for data timeout every 100ms (ensures speed/direction zero when connection is lost)
   if (now - lastTimeoutCheck > 100) {
     lastTimeoutCheck = now;
-    updateAllDisplayPulses();
+    updateDisplayPulse();  // LITE: single display
   }
   
   // Heartbeat every 10 seconds
