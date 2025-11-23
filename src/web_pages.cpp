@@ -420,7 +420,7 @@ String buildSinglePage() {
         </div>
         
         <div class="form-group">
-          <label for="nmeaPort">NMEA Server Port</label>
+          <label for="nmeaPort">TCP Port</label>
           <input type="number" id="nmeaPort" value=")rawliteral";
   
   html += String(nmeaPort);
@@ -428,10 +428,25 @@ String buildSinglePage() {
   html += R"rawliteral(" min="1" max="65535">
         </div>
         
+        <h3>UDP Listener</h3>
+        
+        <div class="form-group">
+          <label for="udpPort">UDP Port</label>
+          <input type="number" id="udpPort" value=")rawliteral";
+  
+  Preferences p;
+  p.begin("cfg", true);
+  uint16_t udpPort = p.getUShort("p2_port", 10110);
+  p.end();
+  html += String(udpPort);
+  
+  html += R"rawliteral(" min="1" max="65535">
+        </div>
+        
         <div class="form-group">
           <p class="info-text">
             ℹ️ <strong>Dual Source:</strong> Both TCP and UDP connections are active simultaneously.
-            TCP connects to the specified host/port. UDP listens on port 10110 for broadcasts.
+            TCP connects to the specified host/port. UDP listens on the configured port for broadcasts.
           </p>
         </div>
         
@@ -541,7 +556,8 @@ String buildSinglePage() {
         sta_pass: document.getElementById('password').value,
         p1_host: document.getElementById('nmeaHost').value,
         p1_port: document.getElementById('nmeaPort').value,
-        p1_proto: document.getElementById('nmeaProto').value
+        p1_proto: document.getElementById('nmeaProto').value,
+        p2_port: document.getElementById('udpPort').value
       });
       
       try {

@@ -134,8 +134,11 @@ static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1
     g_srv->send(405, "text/plain", "Method Not Allowed");
     return;
   }
-  String ssid = g_srv->arg("ssid");
-  String pass = g_srv->arg("pass");
+  // Support both old (ssid/pass) and new (sta_ssid/sta_pass) parameter names
+  String ssid = g_srv->arg("sta_ssid");
+  if (ssid.length() == 0) ssid = g_srv->arg("ssid");
+  String pass = g_srv->arg("sta_pass");
+  if (pass.length() == 0) pass = g_srv->arg("pass");
   String ap_pass = g_srv->arg("ap_pass");
   String wifiModeStr = g_srv->arg("wifi_mode");
 
