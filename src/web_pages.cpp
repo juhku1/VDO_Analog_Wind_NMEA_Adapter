@@ -259,6 +259,33 @@ String buildSinglePage() {
         </div>
         
         <div class="form-group">
+          <label for="dataType">Data Source</label>
+          <select id="dataType">
+            <option value="0" )rawliteral";
+  
+  if (display.dataType == DATA_APPARENT_WIND) html += "selected";
+  
+  html += R"rawliteral(>Apparent Wind (MWV-R, VWR)</option>
+            <option value="1" )rawliteral";
+  
+  if (display.dataType == DATA_TRUE_WIND) html += "selected";
+  
+  html += R"rawliteral(>True Wind (MWV-T, VWT)</option>
+            <option value="2" )rawliteral";
+  
+  if (display.dataType == DATA_SOG) html += "selected";
+  
+  html += R"rawliteral(>Speed Over Ground (RMC, VTG)</option>
+            <option value="3" )rawliteral";
+  
+  if (display.dataType == DATA_COG) html += "selected";
+  
+  html += R"rawliteral(>Course Over Ground (RMC, VTG)</option>
+          </select>
+          <p class="info-text">Select which NMEA data to display on the instrument.</p>
+        </div>
+        
+        <div class="form-group">
           <label for="pulsePin">Pulse Output Pin (GPIO)</label>
           <input type="number" id="pulsePin" value=")rawliteral";
   
@@ -382,7 +409,7 @@ String buildSinglePage() {
         num: '1',
         enabled: document.getElementById('enabled').checked ? '1' : '0',
         type: document.getElementById('type').value,
-        dataType: '0',  // Always Apparent Wind in LITE
+        dataType: document.getElementById('dataType').value,  // LITE Plus: selectable
         pulsePin: document.getElementById('pulsePin').value,
         sumlogK: document.getElementById('sumlogK').value,
         sumlogFmax: document.getElementById('sumlogFmax').value,
@@ -436,35 +463,62 @@ String buildSinglePage() {
       fetch('/api/dataflow')
         .then(r => r.json())
         .then(data => {
-          if (data.apparent) {
+          if (!data.display) return;
+          
+          // Select data source based on display.dataType
+          let sourceData;
+          let sourceName = '';
+          switch(data.display.dataType) {
+            case 0: // Apparent Wind
+              sourceData = data.apparent;
+              sourceName = 'Apparent Wind';
+              break;
+            case 1: // True Wind
+              sourceData = data.true;
+              sourceName = 'True Wind';
+              break;
+            case 2: // SOG
+              sourceData = data.sog;
+              sourceName = 'SOG';
+              break;
+            case 3: // COG
+              sourceData = data.cog;
+              sourceName = 'COG';
+              break;
+            default:
+              sourceData = data.apparent;
+              sourceName = 'Apparent Wind';
+          }
+          
+          if (sourceData) {
             // Update wind speed
             const speedEl = document.querySelector('.status-grid .status-item:nth-child(1) .status-value');
-            if (data.apparent.speed > 0 && data.apparent.age < 4000) {
-              speedEl.innerHTML = data.apparent.speed.toFixed(1) + '<span class="status-unit">kn</span>';
+            if (sourceData.speed > 0 && sourceData.age < 4000) {
+              speedEl.innerHTML = sourceData.speed.toFixed(1) + '<span class="status-unit">kn</span>';
             } else {
               speedEl.innerHTML = '<span class="status-error">--</span>';
             }
             
             // Update wind angle
             const angleEl = document.querySelector('.status-grid .status-item:nth-child(2) .status-value');
-            if (data.apparent.angle >= 0 && data.apparent.age < 4000) {
-              angleEl.innerHTML = data.apparent.angle + '<span class="status-unit">°</span>';
+            if (sourceData.angle >= 0 && sourceData.age < 4000) {
+              angleEl.innerHTML = sourceData.angle + '<span class="status-unit">°</span>';
             } else {
               angleEl.innerHTML = '<span class="status-error">--</span>';
             }
             
             // Update data source
             const sourceEl = document.querySelector('.status-grid .status-item:nth-child(3) .status-value');
-            sourceEl.textContent = data.apparent.source || '-';
+            sourceEl.textContent = sourceName + ' (' + (sourceData.source || '-') + ')';
             
             // Update age
             const ageEl = document.querySelector('.status-grid .status-item:nth-child(3) .info-text');
-            if (data.apparent.age < 1000) {
+            if (sourceData.age < 1000) {
               ageEl.textContent = 'Just now';
-            } else if (data.apparent.age < 60000) {
-              ageEl.textContent = Math.floor(data.apparent.age / 1000) + 's ago';
+            } else if (sourceData.age < 60000) {
+              ageEl.textContent = Math.floor(sourceData.age / 1000) + 's ago';
             } else {
-              ageEl.textContent = Math.floor(data.apparent.age / 60000) + 'm ago';
+              ageEl.textContent = Math.floor(sourceData.age / 60000) + 'm ago';
             }
           }
         })

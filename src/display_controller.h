@@ -11,6 +11,9 @@
 void startDisplay();
 void stopDisplay();
 
+// Update display data from selected source (LITE Plus)
+void updateDisplayData();
+
 // Update display pulse output
 void updateDisplayPulse();
 

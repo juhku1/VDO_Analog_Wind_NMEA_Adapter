@@ -26,9 +26,12 @@ constexpr uint8_t CH_COS = 1;
 // Enum protokollille
 enum { PROTO_UDP = 0, PROTO_TCP = 1, PROTO_HTTP = 2 };
 
-// LITE: Wind data types (Apparent Wind only)
+// LITE Plus: Wind data types (selectable)
 enum WindDataType {
-  DATA_APPARENT_WIND = 0  // Apparent Wind (näennäistuuli) - from MWV(R) or VWR
+  DATA_APPARENT_WIND = 0,  // Apparent Wind (näennäistuuli) - from MWV(R) or VWR
+  DATA_TRUE_WIND = 1,      // True Wind (todellinen tuuli) - from MWV(T) or VWT
+  DATA_SOG = 2,            // Speed Over Ground - from GPS (RMC/VTG)
+  DATA_COG = 3             // Course Over Ground - from GPS (RMC/VTG)
 };
 
 // Display configuration structure
@@ -74,14 +77,28 @@ extern char connProfileName[];
 extern bool hasMwvR;
 extern bool hasMwvT;
 
-// LITE: Apparent Wind data only
+// LITE Plus: Multiple data sources
 extern float apparent_speed_kn;
 extern float apparent_angle_deg;
 extern bool apparent_hasData;
 extern uint32_t apparent_lastUpdate_ms;
 extern char apparent_source[];
 
+extern float true_speed_kn;
+extern float true_angle_deg;
+extern bool true_hasData;
+extern uint32_t true_lastUpdate_ms;
+extern char true_source[];
+
+extern float gps_sog_kn;
+extern float gps_cog_deg;
+extern bool gps_hasSOG;
+extern bool gps_hasCOG;
+extern uint32_t gps_lastUpdate_ms;
+
 extern bool hasVwr;
+extern bool hasMwvT;
+extern bool hasVwt;
 extern bool freezeNMEA;
 extern uint8_t  nmeaProto;
 extern uint16_t nmeaPort;

@@ -57,14 +57,28 @@ int lastAngleSent = 0;
 char lastSentenceType[32] = "-";
 char lastSentenceRaw[256] = "-";
 
-// LITE: GPS data removed
+// LITE Plus: Multiple data sources - protected by dataMutex
 
-// LITE: Apparent Wind data only - protected by dataMutex
+// Apparent Wind data
 float apparent_speed_kn = 0.0;
 float apparent_angle_deg = 0.0;
 bool apparent_hasData = false;
 uint32_t apparent_lastUpdate_ms = 0;
 char apparent_source[16] = "-";  // "MWV(R)", "VWR", etc.
+
+// True Wind data
+float true_speed_kn = 0.0;
+float true_angle_deg = 0.0;
+bool true_hasData = false;
+uint32_t true_lastUpdate_ms = 0;
+char true_source[16] = "-";  // "MWV(T)", "VWT"
+
+// GPS data
+float gps_sog_kn = 0.0;        // Speed Over Ground (knots)
+float gps_cog_deg = 0.0;       // Course Over Ground (degrees)
+bool gps_hasSOG = false;
+bool gps_hasCOG = false;
+uint32_t gps_lastUpdate_ms = 0;
 
 #define AP_SSID           "VDO-Cal"
 #define AP_PASS           "wind12345"
@@ -105,9 +119,11 @@ int offsetDeg = 0;
 char connProfileName[64] = "Yachta";
 bool freezeNMEA = false;
 
-// NMEA sentence type tracking (5s window) - LITE: Apparent Wind only
+// NMEA sentence type tracking (5s window) - LITE Plus
 bool hasMwvR = false;
+bool hasMwvT = false;
 bool hasVwr = false;
+bool hasVwt = false;
 uint32_t lastFlagReset = 0;
 
 char sta_ssid[33] = {0};
@@ -330,10 +346,12 @@ void ensureTCPConnected(WiFiClient& client){
 void pollTCP(WiFiClient& client){
   if(!client.connected()) return;
 
-  // Reset sentence flags every 5 seconds (LITE: Apparent Wind only)
+  // Reset sentence flags every 5 seconds (LITE Plus)
   if(millis() - lastFlagReset > 5000) {
     hasMwvR = false;
+    hasMwvT = false;
     hasVwr = false;
+    hasVwt = false;
     lastFlagReset = millis();
   }
 
@@ -590,7 +608,8 @@ void loop() {
   // Check for data timeout every 100ms (ensures speed/direction zero when connection is lost)
   if (now - lastTimeoutCheck > 100) {
     lastTimeoutCheck = now;
-    updateDisplayPulse();  // LITE: single display
+    updateDisplayData();   // LITE Plus: update from selected source
+    updateDisplayPulse();  // Update pulse output
   }
   
   // Heartbeat every 10 seconds

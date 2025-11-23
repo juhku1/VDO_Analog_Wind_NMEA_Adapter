@@ -60,7 +60,10 @@ static void handleDisplayAPI() {
       display.type[sizeof(display.type) - 1] = '\0';
     }
     if (g_srv->hasArg("dataType")) {
-      display.dataType = DATA_APPARENT_WIND;  // LITE: Always Apparent Wind
+      int dt = g_srv->arg("dataType").toInt();
+      if (dt >= 0 && dt <= 3) {  // LITE Plus: 0-3 valid
+        display.dataType = (uint8_t)dt;
+      }
     }
     if (g_srv->hasArg("offsetDeg")) display.offsetDeg = g_srv->arg("offsetDeg").toInt();
     if (g_srv->hasArg("sumlogK")) display.sumlogK = g_srv->arg("sumlogK").toFloat();
@@ -368,22 +371,54 @@ static void handleStatus(){
   g_srv->send(200, "application/json", j);
 }
 
-// LITE: Simplified data flow API (Apparent Wind only)
+// LITE Plus: Data flow API with multiple sources
 static void handleDataFlow() {
   String j;
-  j.reserve(200);
+  j.reserve(600);
   
   if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
     uint32_t now = millis();
     
     j += "{";
+    
+    // Apparent Wind
     j += "\"apparent\":{";
     j += "\"speed\":"; j += apparent_hasData ? String(apparent_speed_kn, 1) : "0";
     j += ",\"angle\":"; j += apparent_hasData ? String((int)apparent_angle_deg) : "0";
     j += ",\"source\":\""; j += apparent_source; j += "\"";
     j += ",\"age\":"; j += apparent_hasData ? String(now - apparent_lastUpdate_ms) : "999999";
-    j += ",\"enabled\":"; j += display.enabled ? "true" : "false";
     j += "}";
+    
+    // True Wind
+    j += ",\"true\":{";
+    j += "\"speed\":"; j += true_hasData ? String(true_speed_kn, 1) : "0";
+    j += ",\"angle\":"; j += true_hasData ? String((int)true_angle_deg) : "0";
+    j += ",\"source\":\""; j += true_source; j += "\"";
+    j += ",\"age\":"; j += true_hasData ? String(now - true_lastUpdate_ms) : "999999";
+    j += "}";
+    
+    // GPS SOG
+    j += ",\"sog\":{";
+    j += "\"speed\":"; j += gps_hasSOG ? String(gps_sog_kn, 1) : "0";
+    j += ",\"angle\":0";
+    j += ",\"source\":\"GPS\"";
+    j += ",\"age\":"; j += gps_hasSOG ? String(now - gps_lastUpdate_ms) : "999999";
+    j += "}";
+    
+    // GPS COG
+    j += ",\"cog\":{";
+    j += "\"speed\":0";
+    j += ",\"angle\":"; j += gps_hasCOG ? String((int)gps_cog_deg) : "0";
+    j += ",\"source\":\"GPS\"";
+    j += ",\"age\":"; j += gps_hasCOG ? String(now - gps_lastUpdate_ms) : "999999";
+    j += "}";
+    
+    // Display info
+    j += ",\"display\":{";
+    j += "\"enabled\":"; j += display.enabled ? "true" : "false";
+    j += ",\"dataType\":"; j += display.dataType;
+    j += "}";
+    
     j += "}";
     
     xSemaphoreGive(dataMutex);

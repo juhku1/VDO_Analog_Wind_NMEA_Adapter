@@ -21,11 +21,22 @@ extern bool ledcActive;
 extern uint32_t lastFreq;
 extern int lastAngleSent;
 
-// LITE: Apparent Wind data only
+// LITE Plus: Multiple data sources
 extern float apparent_speed_kn;
 extern float apparent_angle_deg;
 extern bool apparent_hasData;
 extern uint32_t apparent_lastUpdate_ms;
+
+extern float true_speed_kn;
+extern float true_angle_deg;
+extern bool true_hasData;
+extern uint32_t true_lastUpdate_ms;
+
+extern float gps_sog_kn;
+extern float gps_cog_deg;
+extern bool gps_hasSOG;
+extern bool gps_hasCOG;
+extern uint32_t gps_lastUpdate_ms;
 
 /* ========= Helper Functions ========= */
 
@@ -87,6 +98,49 @@ void stopDisplay() {
   }
 }
 
+// LITE Plus: Update display data from selected source
+void updateDisplayData() {
+  xSemaphoreTake(dataMutex, portMAX_DELAY);
+  uint8_t dataType = display.dataType;
+  uint32_t now = millis();
+  
+  // Update display based on selected data type
+  switch(dataType) {
+    case DATA_APPARENT_WIND:
+      if (apparent_hasData && (now - apparent_lastUpdate_ms) < DATA_TIMEOUT_MS) {
+        display.windSpeed_kn = apparent_speed_kn;
+        display.windAngle_deg = (int)apparent_angle_deg;
+        display.lastUpdate_ms = apparent_lastUpdate_ms;
+      }
+      break;
+      
+    case DATA_TRUE_WIND:
+      if (true_hasData && (now - true_lastUpdate_ms) < DATA_TIMEOUT_MS) {
+        display.windSpeed_kn = true_speed_kn;
+        display.windAngle_deg = (int)true_angle_deg;
+        display.lastUpdate_ms = true_lastUpdate_ms;
+      }
+      break;
+      
+    case DATA_SOG:
+      if (gps_hasSOG && (now - gps_lastUpdate_ms) < DATA_TIMEOUT_MS) {
+        display.windSpeed_kn = gps_sog_kn;
+        display.windAngle_deg = 0;  // SOG has no angle
+        display.lastUpdate_ms = gps_lastUpdate_ms;
+      }
+      break;
+      
+    case DATA_COG:
+      if (gps_hasCOG && (now - gps_lastUpdate_ms) < DATA_TIMEOUT_MS) {
+        display.windSpeed_kn = 0;  // COG has no speed
+        display.windAngle_deg = (int)gps_cog_deg;
+        display.lastUpdate_ms = gps_lastUpdate_ms;
+      }
+      break;
+  }
+  xSemaphoreGive(dataMutex);
+}
+
 void updateDisplayPulse() {
   if (!ledcActive) return;
   
@@ -100,15 +154,19 @@ void updateDisplayPulse() {
   dataType = display.dataType;
   xSemaphoreGive(dataMutex);
   
-  // Check for data timeout - both display data AND source data must be fresh
+  // Check for data timeout
   uint32_t now = millis();
   uint32_t dataAge = now - lastUpdate;
   bool sourceDataStale = false;
   
-  // LITE: Only check apparent wind data (no True Wind, VMG, GPS)
+  // LITE Plus: Check selected data source
   xSemaphoreTake(dataMutex, portMAX_DELAY);
   if (dataType == DATA_APPARENT_WIND && apparent_hasData) {
     sourceDataStale = (now - apparent_lastUpdate_ms) > DATA_TIMEOUT_MS;
+  } else if (dataType == DATA_TRUE_WIND && true_hasData) {
+    sourceDataStale = (now - true_lastUpdate_ms) > DATA_TIMEOUT_MS;
+  } else if ((dataType == DATA_SOG || dataType == DATA_COG) && (gps_hasSOG || gps_hasCOG)) {
+    sourceDataStale = (now - gps_lastUpdate_ms) > DATA_TIMEOUT_MS;
   }
   xSemaphoreGive(dataMutex);
   
