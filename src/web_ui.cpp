@@ -129,7 +129,7 @@ static void handleGoto(){
   
   g_srv->send(200,"text/plain",String("angle=")+currentAngle);
 }
-static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1_host, p1_port, p2_name, p2_proto, p2_host, p2_port, wifi_mode, w1_ssid, w1_pass, w2_ssid, w2_pass
+static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1_host, p1_port, p2_name, p2_proto, p2_host, p2_port, wifi_mode, w1_ssid, w1_pass
   if (g_srv->method() != HTTP_POST){
     g_srv->send(405, "text/plain", "Method Not Allowed");
     return;
@@ -159,22 +159,17 @@ static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1
   String p2_host = g_srv->arg("p2_host");
   String p2_port = g_srv->arg("p2_port");
 
-  // WiFi Settings (single profile only)
-  String w1_ssid = g_srv->arg("w1_ssid");
-  String w1_pass = g_srv->arg("w1_pass");
-
   // Pause NMEA polling task to prevent race condition
   extern volatile bool pauseNmeaPoll;
   pauseNmeaPoll = true;
   vTaskDelay(pdMS_TO_TICKS(150));  // Wait for nmeaPollTask to pause
-  
+
   // Save to NVS
   prefs.begin(NVS_NAMESPACE, false);
-  
-  
+
   if (ap_pass.length() > 7) prefs.putString("ap_pass", ap_pass);
   prefs.putUChar("wifi_mode", wifiModeStr.toInt());
-  
+
   // Profile 1 (TCP)
   if (p1_name.length() > 0) prefs.putString("p1_name", p1_name);
   if (p1_proto.length() > 0) {
@@ -185,19 +180,15 @@ static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1
   if (p1_host.length() > 0) prefs.putString("p1_host", p1_host);
   if (p1_port.length() > 0) prefs.putUShort("p1_port", (uint16_t)p1_port.toInt());
 
-  // Profile 2 (UDP)
-  if (p2_name.length() > 0) prefs.putString("p2_name", p2_name);
-  if (p2_proto.length() > 0) {
+  // Profile 2 (UDP) - always save, even if empty, to avoid NVS NOT_FOUND errors
+  prefs.putString("p2_name", p2_name);
+  {
     uint8_t proto = (p2_proto.equalsIgnoreCase("tcp") ? PROTO_TCP : 
                      p2_proto.equalsIgnoreCase("http") ? PROTO_HTTP : PROTO_UDP);
     prefs.putUChar("p2_proto", proto);
   }
-  if (p2_host.length() > 0) prefs.putString("p2_host", p2_host);
-  if (p2_port.length() > 0) prefs.putUShort("p2_port", (uint16_t)p2_port.toInt());
-
-  // WiFi Settings (single profile only)
-  if (w1_ssid.length() > 0) prefs.putString("w1_ssid", w1_ssid);
-  if (w1_pass.length() > 0) prefs.putString("w1_pass", w1_pass);
+  prefs.putString("p2_host", p2_host);
+  prefs.putUShort("p2_port", (uint16_t)p2_port.toInt());
 
   // Add to connection history if P1 changed
   if (p1_host.length() > 0 && p1_port.length() > 0) {
@@ -225,9 +216,32 @@ static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1
   pauseNmeaPoll = false;
   Serial.println("[handleSaveCfg] NMEA polling resumed");
 
-  // Reload configuration
-  loadConfig();
-  bindTransport();
+  // Update global variables for TCP/UDP settings (don't call loadConfig, it would overwrite WiFi!)
+  if (p1_host.length() > 0) {
+    strncpy(nmeaHost, p1_host.c_str(), NMEA_HOST_SIZE - 1);
+    nmeaHost[NMEA_HOST_SIZE - 1] = '\0';
+  }
+  if (p1_port.length() > 0) {
+    nmeaPort = (uint16_t)p1_port.toInt();
+  }
+  if (p1_proto.length() > 0) {
+    nmeaProto = (p1_proto.equalsIgnoreCase("tcp") ? PROTO_TCP : 
+                 p1_proto.equalsIgnoreCase("http") ? PROTO_HTTP : PROTO_UDP);
+  }
+
+  // DON'T call loadConfig() here - it would overwrite the values we just saved!
+  // Instead, just reload transport if TCP/UDP settings changed
+  if (p1_host.length() > 0 || p1_port.length() > 0 || p2_port.length() > 0) {
+    bindTransport();
+  }
+  
+  // If WiFi credentials changed, reconnect automatically
+  if (ssid.length() > 0) {
+    Serial.println("[handleSaveCfg] WiFi credentials changed, reconnecting...");
+    WiFi.disconnect(true, false);  // Disconnect STA but keep AP
+    delay(200);
+    connectSTA();  // Reconnect with new credentials (already updated in saveNetworkConfig)
+  }
 
   g_srv->send(200, "text/plain", "OK");
 }
@@ -372,8 +386,7 @@ static void handleStatus(){
   j += ",\"ap_clients\":"; j += apClientCount;
   j += ",\"w1_ssid\":\""; j += prefs.getString("w1_ssid", "Kontu"); j += "\"";
   j += ",\"w1_pass\":\""; j += prefs.getString("w1_pass", "8765432A1"); j += "\"";
-  j += ",\"w2_ssid\":\""; j += prefs.getString("w2_ssid", ""); j += "\"";
-  j += ",\"w2_pass\":\""; j += prefs.getString("w2_pass", ""); j += "\"";
+  // w2_ssid ja w2_pass poistettu käytöstä
   j += ",\"ap_pass\":\""; j += prefs.getString("ap_pass", "wind12345"); j += "\"";
   j += ",\"nmea_data_age\":"; j += (millis() - lastNmeaDataMs);
   j += "}";

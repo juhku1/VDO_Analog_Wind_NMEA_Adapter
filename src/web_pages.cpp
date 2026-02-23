@@ -851,8 +851,8 @@ String buildSinglePage() {
           body: formData
         });
         if (response.ok) {
-          alert('✅ Network settings saved! Device will restart...');
-          setTimeout(() => location.reload(), 3000);
+          alert('✅ Network settings saved! Reconnecting to WiFi...');
+          setTimeout(() => location.reload(), 2000);
         } else {
           alert('❌ Failed to save settings');
         }

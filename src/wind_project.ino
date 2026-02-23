@@ -101,7 +101,7 @@ uint32_t gps_lastUpdate_ms = 0;
 #define AP_PASS           "wind12345"
 uint8_t  nmeaProto = PROTO_HTTP;
 uint16_t nmeaPort  = 80;
-char nmeaHost[64] = "192.168.4.1";
+char nmeaHost[NMEA_HOST_SIZE] = "192.168.4.1";
 
 // Persistent TCP client for real-time wind data
 WiFiClient tcpClient;
@@ -315,8 +315,8 @@ void loadConfig(){
   String s         = prefs.getString("sta_ssid", "");
   String ap        = prefs.getString("ap_pass", AP_PASS);
   
-  // Set YachtaServer password
-  String p = prefs.getString("sta_pass", "8765432A1");  // Load from preferences or default
+  // Load STA password (no hardcoded default to prevent overwriting saved values)
+  String p = prefs.getString("sta_pass", "");
   
   // Load WiFi profile selection (0 or 1)
   uint8_t wifi_mode = prefs.getUChar("wifi_mode", 255);  // 255 = not set (backward compat)
@@ -325,17 +325,11 @@ void loadConfig(){
   String w1_ssid = prefs.getString("w1_ssid", "");
   String w1_pass = prefs.getString("w1_pass", "");
   
-  // Load WiFi Profile 2
-  String w2_ssid = prefs.getString("w2_ssid", "");
-  String w2_pass = prefs.getString("w2_pass", "");
-  
+  // WiFi Profile 2 (w2_ssid, w2_pass) poistettu käytöstä
   // Apply selected WiFi profile (with fallback to old sta_ssid)
   if (wifi_mode != 255) {
     // New WiFi profile system is active
-    if (wifi_mode == 1 && w2_ssid.length() > 0) {
-      s = w2_ssid;
-      p = w2_pass;
-    } else if (w1_ssid.length() > 0) {
+    if (w1_ssid.length() > 0) {
       s = w1_ssid;
       p = w1_pass;
     }
@@ -376,6 +370,14 @@ void saveNetworkConfig(const char* ssid, const char* pass) {
   prefs.end();
 
   Serial.printf("Saved STA SSID='%s' (len=%u)\n", ssid, (unsigned)strlen(ssid));
+  
+  // Update global variables immediately (so WiFi.begin uses new values)
+  strncpy(sta_ssid, ssid, sizeof(sta_ssid) - 1);
+  sta_ssid[sizeof(sta_ssid) - 1] = '\0';
+  if (pass && pass[0] != '\0') {
+    strncpy(sta_pass, pass, sizeof(sta_pass) - 1);
+    sta_pass[sizeof(sta_pass) - 1] = '\0';
+  }
 }
 
 /* ========= UDP/TCP BIND & POLL ========= */

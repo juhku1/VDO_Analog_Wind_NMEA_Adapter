@@ -110,7 +110,11 @@ extern bool hasVwt;
 extern bool freezeNMEA;
 extern uint8_t  nmeaProto;
 extern uint16_t nmeaPort;
-extern char nmeaHost[];
+
+// Network host buffer size
+#define NMEA_HOST_SIZE 64
+extern char nmeaHost[NMEA_HOST_SIZE];
+
 extern volatile bool tcpConnected;
 extern volatile bool udpConnected;
 
