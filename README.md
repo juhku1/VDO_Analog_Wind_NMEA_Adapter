@@ -46,6 +46,7 @@ Here is a picture in the OPB discussion forum that might (?) explain: http://tec
 
 The DAC outputs are connected directly to the SIN and COS inputs of the VDO gauge. Pins are explained in the pictures:
 https://github.com/juhku1/VDO_Analog_Wind_NMEA_Adapter/tree/main/src/images
+Here is the manual: https://archive.org/details/manualzilla-id-6732141/page/31/mode/2up
 
 # Devices used for wind direction:
 - ESP32 microcontroller – receives NMEA data and calculates wind angle
