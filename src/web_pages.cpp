@@ -695,6 +695,48 @@ String buildSinglePage() {
             TCP connects to the specified host/port. UDP listens on the configured port for broadcasts.
           </p>
         </div>
+
+        <h3>UDP Output Forwarding</h3>
+
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="fwdEnable">
+            Enable standard NMEA forwarding
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="fwdBroadcast" checked>
+            Use UDP broadcast (255.255.255.255)
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label for="fwdHost">Forward Host (used when broadcast disabled)</label>
+          <input type="text" id="fwdHost" value="255.255.255.255">
+        </div>
+
+        <div class="form-group">
+          <label for="fwdPort">Forward Port</label>
+          <input type="number" id="fwdPort" value="10111" min="1" max="65535">
+        </div>
+
+        <div class="form-group">
+          <label for="fwdRate">Minimum interval between forwarded packets (ms)</label>
+          <input type="number" id="fwdRate" value="100" min="0" max="2000">
+        </div>
+
+        <div class="form-group">
+          <label>Forward sentence types</label>
+          <label><input type="checkbox" id="fwdMwv" checked> MWV</label>
+          <label><input type="checkbox" id="fwdVwr" checked> VWR</label>
+          <label><input type="checkbox" id="fwdVwt" checked> VWT</label>
+          <label><input type="checkbox" id="fwdRmc" checked> RMC</label>
+          <label><input type="checkbox" id="fwdVtg" checked> VTG</label>
+          <label><input type="checkbox" id="fwdHdt" checked> HDT</label>
+          <label><input type="checkbox" id="fwdHdm" checked> HDM</label>
+        </div>
         
         <div class="button-group">
           <button type="submit">💾 Save Network Settings</button>
@@ -752,6 +794,33 @@ String buildSinglePage() {
         }
         if (dirData.offset !== undefined) {
           document.getElementById('directionOffset').value = dirData.offset;
+        }
+
+        // Load network forwarding settings
+        if (statusData.fwd_enable !== undefined) {
+          document.getElementById('fwdEnable').checked = !!statusData.fwd_enable;
+        }
+        if (statusData.fwd_broadcast !== undefined) {
+          document.getElementById('fwdBroadcast').checked = !!statusData.fwd_broadcast;
+        }
+        if (statusData.fwd_host !== undefined) {
+          document.getElementById('fwdHost').value = statusData.fwd_host;
+        }
+        if (statusData.fwd_port !== undefined) {
+          document.getElementById('fwdPort').value = statusData.fwd_port;
+        }
+        if (statusData.fwd_rate !== undefined) {
+          document.getElementById('fwdRate').value = statusData.fwd_rate;
+        }
+        if (statusData.fwd_mask !== undefined) {
+          const mask = Number(statusData.fwd_mask) || 0;
+          document.getElementById('fwdMwv').checked = !!(mask & 1);
+          document.getElementById('fwdVwr').checked = !!(mask & 2);
+          document.getElementById('fwdVwt').checked = !!(mask & 4);
+          document.getElementById('fwdRmc').checked = !!(mask & 8);
+          document.getElementById('fwdVtg').checked = !!(mask & 16);
+          document.getElementById('fwdHdt').checked = !!(mask & 32);
+          document.getElementById('fwdHdm').checked = !!(mask & 64);
         }
         
         // Load pulse configurations
@@ -840,7 +909,19 @@ String buildSinglePage() {
         p1_host: document.getElementById('nmeaHost').value,
         p1_port: document.getElementById('nmeaPort').value,
         p1_proto: document.getElementById('nmeaProto').value,
-        p2_port: document.getElementById('udpPort').value
+        p2_port: document.getElementById('udpPort').value,
+        fwd_enable: document.getElementById('fwdEnable').checked ? '1' : '0',
+        fwd_broadcast: document.getElementById('fwdBroadcast').checked ? '1' : '0',
+        fwd_host: document.getElementById('fwdHost').value,
+        fwd_port: document.getElementById('fwdPort').value,
+        fwd_rate: document.getElementById('fwdRate').value,
+        fwd_mwv: document.getElementById('fwdMwv').checked ? '1' : '0',
+        fwd_vwr: document.getElementById('fwdVwr').checked ? '1' : '0',
+        fwd_vwt: document.getElementById('fwdVwt').checked ? '1' : '0',
+        fwd_rmc: document.getElementById('fwdRmc').checked ? '1' : '0',
+        fwd_vtg: document.getElementById('fwdVtg').checked ? '1' : '0',
+        fwd_hdt: document.getElementById('fwdHdt').checked ? '1' : '0',
+        fwd_hdm: document.getElementById('fwdHdm').checked ? '1' : '0'
       });
       console.log('Form data:', Object.fromEntries(formData));
       

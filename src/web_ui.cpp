@@ -163,6 +163,20 @@ static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1
   String w1_ssid = g_srv->arg("w1_ssid");
   String w1_pass = g_srv->arg("w1_pass");
 
+  // UDP forward settings
+  String fwdEnable = g_srv->arg("fwd_enable");
+  String fwdBroadcast = g_srv->arg("fwd_broadcast");
+  String fwdHost = g_srv->arg("fwd_host");
+  String fwdPort = g_srv->arg("fwd_port");
+  String fwdRate = g_srv->arg("fwd_rate");
+  String fwdMwv = g_srv->arg("fwd_mwv");
+  String fwdVwr = g_srv->arg("fwd_vwr");
+  String fwdVwt = g_srv->arg("fwd_vwt");
+  String fwdRmc = g_srv->arg("fwd_rmc");
+  String fwdVtg = g_srv->arg("fwd_vtg");
+  String fwdHdt = g_srv->arg("fwd_hdt");
+  String fwdHdm = g_srv->arg("fwd_hdm");
+
   // Pause NMEA polling task to prevent race condition
   extern volatile bool pauseNmeaPoll;
   pauseNmeaPoll = true;
@@ -198,6 +212,28 @@ static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1
   // WiFi Settings (single profile only)
   if (w1_ssid.length() > 0) prefs.putString("w1_ssid", w1_ssid);
   if (w1_pass.length() > 0) prefs.putString("w1_pass", w1_pass);
+
+  // UDP forward settings
+  prefs.putBool("fwd_en", fwdEnable.toInt() != 0);
+  prefs.putBool("fwd_bcast", fwdBroadcast.toInt() != 0);
+  if (fwdHost.length() > 0) prefs.putString("fwd_host", fwdHost);
+
+  uint16_t outPort = (uint16_t)fwdPort.toInt();
+  if (outPort > 0) prefs.putUShort("fwd_port", outPort);
+
+  uint16_t rateMs = (uint16_t)fwdRate.toInt();
+  if (rateMs > 2000) rateMs = 2000;
+  prefs.putUShort("fwd_rate", rateMs);
+
+  uint32_t fwdMask = 0;
+  if (fwdMwv.toInt() != 0) fwdMask |= FWD_MWV;
+  if (fwdVwr.toInt() != 0) fwdMask |= FWD_VWR;
+  if (fwdVwt.toInt() != 0) fwdMask |= FWD_VWT;
+  if (fwdRmc.toInt() != 0) fwdMask |= FWD_RMC;
+  if (fwdVtg.toInt() != 0) fwdMask |= FWD_VTG;
+  if (fwdHdt.toInt() != 0) fwdMask |= FWD_HDT;
+  if (fwdHdm.toInt() != 0) fwdMask |= FWD_HDM;
+  prefs.putUInt("fwd_mask", fwdMask);
 
   // Add to connection history if P1 changed
   if (p1_host.length() > 0 && p1_port.length() > 0) {
@@ -376,6 +412,16 @@ static void handleStatus(){
   j += ",\"w2_pass\":\""; j += prefs.getString("w2_pass", ""); j += "\"";
   j += ",\"ap_pass\":\""; j += prefs.getString("ap_pass", "wind12345"); j += "\"";
   j += ",\"nmea_data_age\":"; j += (millis() - lastNmeaDataMs);
+  j += ",\"fwd_enable\":"; j += (udpForwardEnabled ? "true" : "false");
+  j += ",\"fwd_broadcast\":"; j += (udpForwardBroadcast ? "true" : "false");
+  j += ",\"fwd_host\":\""; j += udpForwardHost; j += "\"";
+  j += ",\"fwd_port\":"; j += udpForwardPort;
+  j += ",\"fwd_rate\":"; j += udpForwardMinIntervalMs;
+  j += ",\"fwd_mask\":"; j += udpForwardMask;
+  j += ",\"fwd_count\":"; j += udpForwardCount;
+  j += ",\"fwd_drop_rate\":"; j += udpForwardDropRate;
+  j += ",\"fwd_drop_dup\":"; j += udpForwardDropDup;
+  j += ",\"fwd_drop_filter\":"; j += udpForwardDropFilter;
   j += "}";
   g_srv->send(200, "application/json", j);
 }

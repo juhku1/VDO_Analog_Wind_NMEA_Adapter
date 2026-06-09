@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <ctype.h>
 #include <Wire.h>
 #include <WiFi.h>
 #include <WebServer.h>
@@ -111,6 +112,23 @@ uint8_t tcpFailCount = 0;  // Count consecutive TCP failures to back off
 // UDP client for OpenPlotter/secondary source
 WiFiUDP udpClient;
 uint32_t lastUdpAttempt = 0;
+uint16_t udpListenPort = 10110;
+
+// UDP output forwarding (standard NMEA relay)
+WiFiUDP udpForwardClient;
+bool udpForwardEnabled = false;
+bool udpForwardBroadcast = true;
+char udpForwardHost[64] = "255.255.255.255";
+uint16_t udpForwardPort = 10111;
+uint16_t udpForwardMinIntervalMs = 100;
+uint32_t udpForwardMask = FWD_DEFAULT_MASK;
+uint32_t udpForwardCount = 0;
+uint32_t udpForwardDropRate = 0;
+uint32_t udpForwardDropDup = 0;
+uint32_t udpForwardDropFilter = 0;
+char lastForwardSentence[256] = {0};
+uint32_t lastForwardSentenceMs = 0;
+uint32_t lastForwardMs = 0;
 
 // Separate connection states for TCP and UDP
 volatile bool tcpConnected = false;
@@ -149,6 +167,99 @@ char sta_pass[65] = {0};
 char ap_pass[65] = {0};
 
 WebServer server(80);
+
+static bool matchesFormatter3(const char* payload, const char* fmt) {
+  if (!payload || strlen(payload) < 5) return false;
+
+  // Standard talker format, e.g. GPMWV
+  if (toupper((unsigned char)payload[2]) == fmt[0] &&
+      toupper((unsigned char)payload[3]) == fmt[1] &&
+      toupper((unsigned char)payload[4]) == fmt[2]) {
+    return true;
+  }
+
+  // Some sources include 3-char talker prefix, e.g. WIMWV
+  if (strlen(payload) >= 6 &&
+      toupper((unsigned char)payload[3]) == fmt[0] &&
+      toupper((unsigned char)payload[4]) == fmt[1] &&
+      toupper((unsigned char)payload[5]) == fmt[2]) {
+    return true;
+  }
+
+  return false;
+}
+
+static uint32_t sentenceMaskBit(const char* line) {
+  if (!line || !line[0]) return 0;
+  const char* payload = line;
+  if (*payload == '$' || *payload == '!') payload++;
+
+  if (matchesFormatter3(payload, "MWV")) return FWD_MWV;
+  if (matchesFormatter3(payload, "VWR")) return FWD_VWR;
+  if (matchesFormatter3(payload, "VWT")) return FWD_VWT;
+  if (matchesFormatter3(payload, "RMC")) return FWD_RMC;
+  if (matchesFormatter3(payload, "VTG")) return FWD_VTG;
+  if (matchesFormatter3(payload, "HDT")) return FWD_HDT;
+  if (matchesFormatter3(payload, "HDM")) return FWD_HDM;
+
+  return 0;
+}
+
+static void tryForwardNMEA(const char* line) {
+  if (!udpForwardEnabled || !line || !line[0]) return;
+
+  uint32_t sentenceBit = sentenceMaskBit(line);
+  if (sentenceBit == 0 || (udpForwardMask & sentenceBit) == 0) {
+    udpForwardDropFilter++;
+    return;
+  }
+
+  uint32_t now = millis();
+  if (lastForwardSentence[0] != '\0' &&
+      strcmp(lastForwardSentence, line) == 0 &&
+      (now - lastForwardSentenceMs) < 400) {
+    udpForwardDropDup++;
+    return;
+  }
+
+  if (udpForwardMinIntervalMs > 0 && (now - lastForwardMs) < udpForwardMinIntervalMs) {
+    udpForwardDropRate++;
+    return;
+  }
+
+  if (udpForwardPort == 0) {
+    udpForwardDropFilter++;
+    return;
+  }
+
+  // Prevent self-loop if forwarding back to the same UDP listening port.
+  if (udpForwardPort == udpListenPort) {
+    udpForwardDropFilter++;
+    return;
+  }
+
+  IPAddress targetIp;
+  if (udpForwardBroadcast) {
+    targetIp = IPAddress(255, 255, 255, 255);
+  } else if (!targetIp.fromString(udpForwardHost)) {
+    udpForwardDropFilter++;
+    return;
+  }
+
+  if (!udpForwardClient.beginPacket(targetIp, udpForwardPort)) {
+    return;
+  }
+
+  udpForwardClient.write((const uint8_t*)line, strlen(line));
+  udpForwardClient.write((const uint8_t*)"\r\n", 2);
+  if (udpForwardClient.endPacket()) {
+    udpForwardCount++;
+    lastForwardMs = now;
+    strncpy(lastForwardSentence, line, sizeof(lastForwardSentence) - 1);
+    lastForwardSentence[sizeof(lastForwardSentence) - 1] = '\0';
+    lastForwardSentenceMs = now;
+  }
+}
 
 // FreeRTOS task for NMEA polling on Core 1
 void nmeaPollTaskFunc(void *pvParameters) {
@@ -303,6 +414,7 @@ void loadConfig(){
   uint8_t p2_proto = prefs.getUChar("p2_proto", PROTO_UDP);  // P2 defaults to UDP
   String p2_host  = prefs.getString("p2_host", "");
   uint16_t p2_port = prefs.getUShort("p2_port", 10110);
+  udpListenPort = p2_port;
   
   // Configure TCP connection (Profile 1) - always active
   nmeaProto = p1_proto;
@@ -346,10 +458,25 @@ void loadConfig(){
   s.toCharArray(sta_ssid, sizeof(sta_ssid));
   p.toCharArray(sta_pass, sizeof(sta_pass));
   ap.toCharArray(ap_pass, sizeof(ap_pass));
+
+  // UDP forward settings
+  udpForwardEnabled = prefs.getBool("fwd_en", false);
+  udpForwardBroadcast = prefs.getBool("fwd_bcast", true);
+  String fwdHost = prefs.getString("fwd_host", "255.255.255.255");
+  fwdHost.toCharArray(udpForwardHost, sizeof(udpForwardHost));
+  udpForwardPort = prefs.getUShort("fwd_port", 10111);
+  udpForwardMinIntervalMs = prefs.getUShort("fwd_rate", 100);
+  udpForwardMask = prefs.getUInt("fwd_mask", FWD_DEFAULT_MASK);
   prefs.end();
   
   Serial.printf("Network: Profile1 (TCP) %s:%u, Profile2 (UDP) port %u\n", 
     p1_host.c_str(), p1_port, p2_port);
+  Serial.printf("UDP forward: %s, %s:%u, minInterval=%ums, mask=0x%lX\n",
+    udpForwardEnabled ? "ON" : "OFF",
+    udpForwardBroadcast ? "broadcast" : udpForwardHost,
+    udpForwardPort,
+    udpForwardMinIntervalMs,
+    udpForwardMask);
 }
 
 void saveNetworkConfig(const char* ssid, const char* pass) {
@@ -465,6 +592,7 @@ void pollTCP(WiFiClient& client){
             xSemaphoreGive(dataMutex);
             lastNmeaDataMs = millis();
             lastTcpDataMs = millis();
+            tryForwardNMEA(nmeaLineBuf);
             if(parseNMEALine(nmeaLineBuf)) {
               // LITE Multi: Update outputs immediately when new NMEA data arrives
               // This provides faster response than waiting for 50ms loop update
@@ -502,12 +630,7 @@ void ensureUDPBound() {
   if (now < lastUdpAttempt) return;  // Don't retry too often
   lastUdpAttempt = now + 3000;  // Wait 3 seconds between bind attempts
   
-  // Get Profile 2 (UDP) port from config
-  Preferences p;
-  p.begin("cfg", true);
-  uint16_t udpPort = p.getUShort("p2_port", 10110);
-  p.end();
-  
+  uint16_t udpPort = udpListenPort;
   Serial.printf("UDP bind to port %u...\n", udpPort);
   
   if (udpClient.begin(udpPort)) {
@@ -555,6 +678,7 @@ void pollUDP() {
             
             lastNmeaDataMs = millis();
             lastUdpDataMs = millis();
+            tryForwardNMEA(nmeaLineBuf);
             if (parseNMEALine(nmeaLineBuf)) {
               // LITE Multi: Update outputs immediately when new NMEA data arrives
               // This provides faster response than waiting for 50ms loop update
@@ -645,6 +769,12 @@ void setup() {
   WiFi.softAP(AP_SSID, ap_pass);
   Serial.printf("    AP started: %s (password: %s) (t=%lums)\n", AP_SSID, ap_pass, millis() - setupStart);
   delay(200);  // Let WiFi stack stabilize
+
+  if (udpForwardClient.begin(0)) {
+    Serial.println("    UDP forward socket ready");
+  } else {
+    Serial.println("    UDP forward socket init failed");
+  }
   
   // Now initialize DAC after WiFi is stable
   Serial.printf("[4/8] Initializing I2C and DAC... (t=%lums)\n", millis() - setupStart);

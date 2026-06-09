@@ -26,6 +26,16 @@ constexpr uint8_t CH_COS = 1;
 // Enum protokollille
 enum { PROTO_UDP = 0, PROTO_TCP = 1, PROTO_HTTP = 2 };
 
+// UDP forward sentence mask bits
+constexpr uint32_t FWD_MWV = (1UL << 0);
+constexpr uint32_t FWD_VWR = (1UL << 1);
+constexpr uint32_t FWD_VWT = (1UL << 2);
+constexpr uint32_t FWD_RMC = (1UL << 3);
+constexpr uint32_t FWD_VTG = (1UL << 4);
+constexpr uint32_t FWD_HDT = (1UL << 5);
+constexpr uint32_t FWD_HDM = (1UL << 6);
+constexpr uint32_t FWD_DEFAULT_MASK = FWD_MWV | FWD_VWR | FWD_VWT | FWD_RMC | FWD_VTG | FWD_HDT | FWD_HDM;
+
 // LITE Multi: Wind data types (selectable)
 enum WindDataType {
   DATA_APPARENT_WIND = 0,  // Apparent Wind (näennäistuuli) - from MWV(R) or VWR
@@ -113,6 +123,18 @@ extern uint16_t nmeaPort;
 extern char nmeaHost[];
 extern volatile bool tcpConnected;
 extern volatile bool udpConnected;
+
+// UDP output forwarding settings/runtime
+extern bool udpForwardEnabled;
+extern bool udpForwardBroadcast;
+extern char udpForwardHost[];
+extern uint16_t udpForwardPort;
+extern uint16_t udpForwardMinIntervalMs;
+extern uint32_t udpForwardMask;
+extern uint32_t udpForwardCount;
+extern uint32_t udpForwardDropRate;
+extern uint32_t udpForwardDropDup;
+extern uint32_t udpForwardDropFilter;
 
 // Separate NMEA tracking for TCP and UDP
 extern char lastTcpSentence[];
