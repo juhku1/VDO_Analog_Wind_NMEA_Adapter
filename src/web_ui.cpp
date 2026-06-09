@@ -163,6 +163,11 @@ static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1
   String w1_ssid = g_srv->arg("w1_ssid");
   String w1_pass = g_srv->arg("w1_pass");
 
+  // Keep single-profile UI and startup profile selection in sync.
+  // If legacy profile fields are missing, mirror sta_ssid/sta_pass to w1.
+  if (w1_ssid.length() == 0 && ssid.length() > 0) w1_ssid = ssid;
+  if (w1_pass.length() == 0 && pass.length() > 0) w1_pass = pass;
+
   // UDP forward settings
   String fwdEnable = g_srv->arg("fwd_enable");
   String fwdBroadcast = g_srv->arg("fwd_broadcast");
@@ -187,7 +192,13 @@ static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1
   
   
   if (ap_pass.length() > 7) prefs.putString("ap_pass", ap_pass);
-  prefs.putUChar("wifi_mode", wifiModeStr.toInt());
+
+  // Do not overwrite mode with implicit 0 when parameter is missing.
+  if (wifiModeStr.length() > 0) {
+    prefs.putUChar("wifi_mode", wifiModeStr.toInt());
+  } else if (w1_ssid.length() > 0) {
+    prefs.putUChar("wifi_mode", 0);
+  }
   
   // Profile 1 (TCP)
   if (p1_name.length() > 0) prefs.putString("p1_name", p1_name);
@@ -406,8 +417,8 @@ static void handleStatus(){
   j += ",\"ap_ssid\":\"";  j += WiFi.softAPSSID(); j += "\"";
   j += ",\"ap_ip\":\"";    j += WiFi.softAPIP().toString(); j += "\"";
   j += ",\"ap_clients\":"; j += apClientCount;
-  j += ",\"w1_ssid\":\""; j += prefs.getString("w1_ssid", "Kontu"); j += "\"";
-  j += ",\"w1_pass\":\""; j += prefs.getString("w1_pass", "8765432A1"); j += "\"";
+  j += ",\"w1_ssid\":\""; j += prefs.getString("w1_ssid", ""); j += "\"";
+  j += ",\"w1_pass\":\""; j += prefs.getString("w1_pass", ""); j += "\"";
   j += ",\"w2_ssid\":\""; j += prefs.getString("w2_ssid", ""); j += "\"";
   j += ",\"w2_pass\":\""; j += prefs.getString("w2_pass", ""); j += "\"";
   j += ",\"ap_pass\":\""; j += prefs.getString("ap_pass", "wind12345"); j += "\"";

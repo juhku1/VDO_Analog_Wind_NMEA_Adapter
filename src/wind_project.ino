@@ -452,6 +452,10 @@ void loadConfig(){
       p = w1_pass;
     }
     // else: use old s and p values
+  } else if (w1_ssid.length() > 0) {
+    // Migration fallback: if legacy mode is unset but w1 exists, prefer w1.
+    s = w1_ssid;
+    p = w1_pass;
   }
   // else: wifi_mode never set, use old sta_ssid/sta_pass system
   
