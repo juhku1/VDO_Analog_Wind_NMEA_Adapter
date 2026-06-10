@@ -121,6 +121,7 @@ extern bool freezeNMEA;
 extern uint8_t  nmeaProto;
 extern uint16_t nmeaPort;
 extern char nmeaHost[];
+extern char nmeaPath[];
 extern volatile bool tcpConnected;
 extern volatile bool udpConnected;
 

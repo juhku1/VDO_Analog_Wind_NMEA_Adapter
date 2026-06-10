@@ -209,6 +209,12 @@ static void handleSaveCfg(){ // POST: ssid, pass, ap_pass, p1_name, p1_proto, p1
   }
   if (p1_host.length() > 0) prefs.putString("p1_host", p1_host);
   if (p1_port.length() > 0) prefs.putUShort("p1_port", (uint16_t)p1_port.toInt());
+  String p1_path = g_srv->arg("p1_path");
+  if (p1_path.length() > 0) {
+    prefs.putString("p1_path", p1_path);
+    strncpy(nmeaPath, p1_path.c_str(), 63);
+    nmeaPath[63] = '\0';
+  }
 
   // Profile 2 (UDP)
   if (p2_name.length() > 0) prefs.putString("p2_name", p2_name);

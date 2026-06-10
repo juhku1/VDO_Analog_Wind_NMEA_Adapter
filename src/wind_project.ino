@@ -100,9 +100,10 @@ uint32_t gps_lastUpdate_ms = 0;
 
 #define AP_SSID           "VDO-Cal"
 #define AP_PASS           "wind12345"
-uint8_t  nmeaProto = PROTO_HTTP;
-uint16_t nmeaPort  = 80;
+uint8_t  nmeaProto = PROTO_TCP;
+uint16_t nmeaPort  = 6666;
 char nmeaHost[64] = "192.168.4.1";
+char nmeaPath[64] = "/nmea";
 
 // Persistent TCP client for real-time wind data
 WiFiClient tcpClient;
@@ -406,7 +407,7 @@ void loadConfig(){
   // - Profile 2 (UDP): listening on configured port
   String p1_name  = prefs.getString("p1_name", "Yachta");
   uint8_t p1_proto = prefs.getUChar("p1_proto", PROTO_TCP);
-  String p1_host  = prefs.getString("p1_host", "192.168.68.145");
+  String p1_host  = prefs.getString("p1_host", "192.168.4.1");
   uint16_t p1_port = prefs.getUShort("p1_port", 6666);
   
   // Load Profile 2 (OpenPlotter - UDP by default, both connections always active)
@@ -421,13 +422,30 @@ void loadConfig(){
   strncpy(nmeaHost, p1_host.c_str(), sizeof(nmeaHost) - 1);
   nmeaHost[sizeof(nmeaHost) - 1] = '\0';
   nmeaPort = p1_port;
+  String p1_path = prefs.getString("p1_path", "/nmea");
+  strncpy(nmeaPath, p1_path.c_str(), sizeof(nmeaPath) - 1);
+  nmeaPath[sizeof(nmeaPath) - 1] = '\0';
   strncpy(connProfileName, p1_name.c_str(), sizeof(connProfileName) - 1);
   connProfileName[sizeof(connProfileName) - 1] = '\0';
+
+  // Migration: fix stale legacy defaults that can't connect to Yachta
+  // If host is an old default that doesn't match known Yachta AP subnet, reset to 192.168.4.1:6666 TCP
+  if (strcmp(nmeaHost, "192.168.68.145") == 0 ||
+      (nmeaProto == PROTO_HTTP && nmeaPort == 80)) {
+    Serial.println("[loadConfig] Migrating stale host/proto to Yachta defaults");
+    strncpy(nmeaHost, "192.168.4.1", sizeof(nmeaHost) - 1);
+    nmeaPort = 6666;
+    nmeaProto = PROTO_TCP;
+    // Persist the corrected values immediately
+    prefs.putString("p1_host", "192.168.4.1");
+    prefs.putUShort("p1_port", 6666);
+    prefs.putUChar("p1_proto", PROTO_TCP);
+  }
   
-  String s         = prefs.getString("sta_ssid", "");
+  String s         = prefs.getString("sta_ssid", "YachtaServer");
   String ap        = prefs.getString("ap_pass", AP_PASS);
   
-  // Set YachtaServer password
+  // Load STA password
   String p = prefs.getString("sta_pass", "8765432A1");  // Load from preferences or default
   
   // Load WiFi profile selection (0 or 1)
@@ -504,6 +522,7 @@ void saveNetworkConfig(const char* ssid, const char* pass) {
   prefs.putUShort("udp_port", nmeaPort);
   prefs.putUChar("proto",     nmeaProto);
   prefs.putString("host",     nmeaHost);
+  prefs.putString("p1_path",  nmeaPath);
   prefs.end();
 
   Serial.printf("Saved STA SSID='%s' (len=%u)\n", ssid, (unsigned)strlen(ssid));
@@ -550,6 +569,15 @@ void ensureTCPConnected(WiFiClient& client){
     Serial.printf("TCP connected in %lums! Setting non-blocking mode...\n", connectTime);
     client.setTimeout(0);  // Non-blocking mode for data reading
     tcpFailCount = 0;  // Reset failure count
+    // HTTP: lähetä GET-pyyntö heti yhteyden muodostuttua
+    if (nmeaProto == PROTO_HTTP) {
+      char httpReq[192];
+      snprintf(httpReq, sizeof(httpReq),
+        "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: keep-alive\r\n\r\n",
+        nmeaPath, nmeaHost);
+      client.print(httpReq);
+      Serial.printf("HTTP GET sent to %s%s\n", nmeaHost, nmeaPath);
+    }
   } else {
     if (tcpFailCount < 3) {
       Serial.printf("TCP connect failed after %lums\n", connectTime);
