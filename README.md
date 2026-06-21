@@ -3,11 +3,12 @@ This ESP32-based adapter revives legacy VDO wind instruments by allowing them to
 Originally designed for analog sensors, these gauges can now be integrated into digital marine systems. 
 https://youtube.com/shorts/jcuR95Ze4js?si=s1GGsKVY_nZhsb6T
 
-Only VDO Logic Wind (wind angle & wind speed) and VDO Sumlog (wind speed) have been tested so far.
+Only VDO Logic Wind (wind angle & wind speed) and VDO Sumlog (wind speed) have been tested so far. However, it seems that the are bunch of Raymarine instruments that might work just the same way. 
+https://support.raymarine.com/s/article/Masthead-Wind-Transducer-Test?language=en_US
 
-Use at your own risk. If you're using another brand or model, try to measure the original gauge to understand if your device is similar — and what voltages it expects. And before connecting any expensive electronics, measure the voltages and signals the ESP32 + DAC are sending.
+Use at your own risk. If you're using other brand or model, try to measure the original gauge to understand if your device is similar — and what voltages it expects. And before connecting any expensive electronics, measure the voltages and signals the ESP32 + DAC are sending.
 
-Again: this works with my setup — but use at your own risk. I am not professional. But as I managed to make this work I want to share my findings.
+I am not professional. But as I managed to make this work I want to share my findings.
 
 What I did: I reverse engineered the VDO Logic Wind sensor behavior using information from various sources, including the German open-boat-projects.org forum.
 https://www.segeln-forum.de/thread/75527-reparaturhilfe-f%C3%BCr-vdo-windmessgeber/
